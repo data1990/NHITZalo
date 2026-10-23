@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zalo Bubble</title>
+  <link rel="stylesheet" href="bubble.css">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Container tổng -->
+  <div id="bubble-container" class="collapsed">
+    
+    <!-- 1. Trạng thái thu gọn: Icon tròn nổi chuẩn Android Chat Head -->
+    <div id="collapsed-head" class="bubble-circle" title="Kéo để di chuyển, bấm để mở chat">
+      <div class="pulse-ring"></div>
+      <div class="circle-avatar">
+        <img id="brand-logo-icon" class="brand-img" src="../../assets/logo.png" alt="NHIT Zalo">
+        <img id="sender-avatar" class="avatar-img hidden" src="" alt="Avatar">
+        <div id="sender-initials" class="avatar-letter hidden">Z</div>
+      </div>
+      <!-- Badge đếm tin chưa đọc -->
+      <span id="unread-badge" class="badge hidden">0</span>
+    </div>
+
+    <!-- Khung xem trước tin nhắn (Preview Pill) khi ẩn / thu gọn cửa sổ chat -->
+    <div id="bubble-preview-pill" class="bubble-preview-pill hidden" title="Bấm để mở cuộc trò chuyện">
+      <div class="preview-avatar-box" id="preview-avatar-box">
+        <img id="preview-avatar-img" class="preview-avatar-img hidden" src="" alt="Avatar">
+        <div id="preview-avatar-letter" class="preview-avatar-letter">Z</div>
+      </div>
+      <div class="preview-text-box">
+        <div class="preview-meta-row">
+          <span class="preview-sender-name" id="preview-sender-name">Người gửi</span>
+          <span class="preview-badge" id="preview-badge">Tin mới</span>
+        </div>
+        <div class="preview-snippet-text" id="preview-snippet-text">Nội dung tin nhắn...</div>
+      </div>
+      <button id="preview-close-btn" class="preview-close-btn" title="Đóng xem trước">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- 2. Trạng thái mở rộng: Popup Card Android Bubble Style -->
+    <div id="expanded-card" class="bubble-card">
+      
+      <!-- PHẦN PHÍA TRÊN: Thanh Chat Heads (Icon các người nhắn tin) & Controls -->
+      <div class="bubble-top-bar" id="bubble-header-draggable">
+        <!-- Hàng icon Chat Heads cuộn ngang -->
+        <div class="chatheads-scroll-wrapper">
+          <div class="chatheads-track" id="chatheads-track">
+            <!-- Render động danh sách icon người nhắn tin ở đây -->
+          </div>
+        </div>
+
+        <!-- Các nút tiện ích: Đồng bộ, Dashboard, Thu gọn -->
+        <div class="header-actions">
+          <button id="btn-sync-bubble" class="icon-btn" title="Kéo thêm tin nhắn từ điện thoại Zalo (Không bắt buộc)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+          </button>
+          <button id="btn-dashboard" class="icon-btn" title="Mở bảng điều khiển Zalo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+          </button>
+          <button id="btn-collapse" class="icon-btn" title="Thu gọn thành icon tròn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- KHUNG CHAT BÊN DƯỚI (Card tin nhắn có nền và bo góc) -->
+      <div class="bubble-chat-window">
+        <!-- Thanh thông tin hội thoại đang active -->
+        <div class="thread-info-bar">
+          <div class="thread-info-left">
+            <h4 id="card-sender-name">Đang tải...</h4>
+            <span id="card-sender-type" class="badge-type">Cá nhân</span>
+          </div>
+          <div id="thread-status-indicator" class="thread-status-badge">
+            <span class="status-dot"></span>
+            <span id="thread-status-text">Đang kết nối</span>
+          </div>
+        </div>
+
+        <!-- PHẦN PHÍA DƯỚI: Danh sách nội dung tin nhắn của người đang chat -->
+        <div class="card-body" id="messages-list">
+          <div class="empty-state" id="empty-state">
+            <div class="empty-icon">💬</div>
+            <p>Chưa có tin nhắn trong hội thoại này</p>
+          </div>
+        </div>
+
+        <!-- KHUNG NHẬP TIN NHẮN TRẢ LỜI NHANH Ở DƯỚI CÙNG -->
+        <div class="card-footer">
+          <div class="reply-box">
+            <input type="text" id="reply-input" placeholder="Nhập tin nhắn..." maxlength="500" autocomplete="off">
+            <button id="btn-send-reply" title="Gửi tin nhắn (Enter)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script src="bubble.js"></script>
+</body>
+</html>

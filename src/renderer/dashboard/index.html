@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zalo Bubble Notifier - NHIT</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Custom Title Bar -->
+    <header class="titlebar">
+      <div class="titlebar-left">
+        <div class="brand-icon">
+          <img src="../../assets/logo.png" class="brand-logo-img" alt="NHIT Zalo">
+        </div>
+        <span class="app-title">NgocHoangIT - Zalo Bubble Notifier</span>
+        <span class="version-tag">PRO</span>
+      </div>
+      <div class="titlebar-actions">
+        <button id="btn-win-minimize" class="titlebar-btn" title="Thu nhỏ">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+        <button id="btn-win-close" class="titlebar-btn btn-close" title="Đóng bảng điều khiển">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <div class="app-body">
+      
+      <!-- Sidebar Navigation -->
+      <aside class="sidebar">
+        <!-- Status Indicator -->
+        <div class="connection-status-card" id="status-card">
+          <div class="status-indicator">
+            <span class="status-pulse" id="status-pulse"></span>
+            <span class="status-text" id="status-label">Chưa kết nối</span>
+          </div>
+          <p class="status-sub" id="status-desc">Cần đăng nhập tài khoản Zalo</p>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav-menu">
+          <button class="nav-item active" data-tab="tab-login">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span>Tài khoản Zalo</span>
+          </button>
+
+          <button class="nav-item" data-tab="tab-messages">
+            <div class="nav-badge-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span id="tab-unread-badge" class="nav-unread hidden">0</span>
+            </div>
+            <span>Tin nhắn Zalo</span>
+          </button>
+
+          <button class="nav-item" data-tab="tab-settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>Cài đặt Bong bóng</span>
+          </button>
+        </nav>
+
+        <!-- Quick Test Button & Brand Card -->
+        <div class="sidebar-footer">
+          <button id="btn-quick-test" class="btn-primary-gradient" title="Thử nghiệm bong bóng chat nổi tròn ngay bây giờ">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>Thử tin nhắn mẫu</span>
+          </button>
+
+          <div class="sidebar-brand-card">
+            <img src="../../assets/logo.png" class="sidebar-brand-logo" alt="Ngọc Hoàng IT">
+            <div class="sidebar-brand-text">
+              <span class="sidebar-brand-name">Ngọc Hoàng IT</span>
+              <span class="sidebar-brand-sub">Zalo Bubble Solution</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Panels -->
+      <main class="content-area">
+        
+        <!-- TAB 1: TÀI KHOẢN VÀ ĐĂNG NHẬP QR -->
+        <section id="tab-login" class="tab-panel active">
+          <div class="panel-header">
+            <h2>Kết nối Tài khoản Zalo</h2>
+            <p>Quét mã QR bằng ứng dụng Zalo trên điện thoại để đọc tin nhắn và nhận thông báo bong bóng tròn</p>
+          </div>
+
+          <div class="login-layout">
+            <!-- Khung quét QR -->
+            <div class="qr-card">
+              <div class="qr-wrapper" id="qr-box">
+                <div class="qr-placeholder" id="qr-placeholder">
+                  <div class="qr-icon-placeholder">📱</div>
+                  <p>Bấm nút bên dưới để tạo mã QR đăng nhập</p>
+                </div>
+                <img id="qr-image" class="qr-img hidden" src="" alt="Zalo QR Code">
+                <div id="qr-loading" class="qr-loading-overlay hidden">
+                  <div class="spinner"></div>
+                  <p>Đang tạo mã QR bảo mật...</p>
+                </div>
+              </div>
+
+              <div class="qr-actions">
+                <button id="btn-generate-qr" class="btn-action">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                  </svg>
+                  <span>Tạo mã QR đăng nhập</span>
+                </button>
+              </div>
+
+              <div class="qr-instructions">
+                <div class="step-item">
+                  <span class="step-num">1</span>
+                  <span>Mở ứng dụng <strong>Zalo</strong> trên điện thoại</span>
+                </div>
+                <div class="step-item">
+                  <span class="step-num">2</span>
+                  <span>Chọn biểu tượng <strong>Quét mã QR</strong> ở góc trên</span>
+                </div>
+                <div class="step-item">
+                  <span class="step-num">3</span>
+                  <span>Quét mã và bấm <strong>Đăng nhập</strong> trên điện thoại</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Khung thông tin tài khoản (khi đã đăng nhập) -->
+            <div class="account-card" id="account-info-card">
+              <div class="account-header">
+                <h3>Thông tin phiên Zalo</h3>
+              </div>
+              <div class="account-body" id="account-body-logged-in" style="display: none;">
+                <div class="user-avatar-large">
+                  <img id="user-avatar-img" class="user-avatar-photo hidden" src="" alt="Avatar">
+                  <span id="user-avatar-letter">Z</span>
+                </div>
+                <h3 id="user-display-name">Đang tải tên tài khoản...</h3>
+                <p class="account-status-badge">Đang hoạt động & Lắng nghe tin nhắn</p>
+
+                <div class="account-details">
+                  <div class="detail-row">
+                    <span class="detail-key">Tự động kết nối lại:</span>
+                    <span class="detail-val text-green">Đã bật (Session lưu cục bộ)</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-key">Bong bóng chat:</span>
+                    <span class="detail-val text-blue">Sẵn sàng nhận thông báo</span>
+                  </div>
+                </div>
+
+                <button id="btn-logout" class="btn-danger-outline">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  <span>Đăng xuất tài khoản</span>
+                </button>
+              </div>
+
+              <div class="account-body" id="account-body-not-logged">
+                <div class="empty-state-card">
+                  <div class="empty-state-icon">🔒</div>
+                  <h4>Chưa có tài khoản nào đăng nhập</h4>
+                  <p>Phiên làm việc sẽ được lưu tự động trên máy tính của bạn để không cần quét lại mã QR trong các lần khởi động tiếp theo.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: HỘI THOẠI & TIN NHẮN CHUẨN ZALO -->
+        <section id="tab-messages" class="tab-panel">
+          <div class="panel-header-row">
+            <div>
+              <h2>Hội thoại & Tin nhắn Zalo Real-time</h2>
+              <p id="local-storage-status-desc">Dữ liệu được lưu trữ tự động trên máy tính • Mở lên có sẵn, không cần đồng bộ lại</p>
+            </div>
+            <div class="header-tools">
+              <button id="btn-sync-history-status" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px;" title="Kiểm tra tình trạng lưu trữ & lịch sử đồng bộ tin nhắn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                  <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                <span>Kiểm tra đồng bộ</span>
+              </button>
+              <button id="btn-quick-sync-cloud" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px; color: #38BDF8; border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.08);" title="Đồng bộ nhanh tin nhắn gần đây từ Cloud/Socket (1-2s, không cần mở điện thoại)">
+                <span id="quick-sync-icon" style="font-size: 13px;">⚡</span>
+                <span id="quick-sync-text">Đồng bộ nhanh</span>
+              </button>
+              <button id="btn-fetch-groups" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px;" title="Tải lại danh sách các Nhóm Zalo">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                <span>Làm mới Nhóm</span>
+              </button>
+              <button id="btn-sync-messages" class="btn-primary-sm" style="display: flex; align-items: center; gap: 6px; background: #0068FF;" title="Tin nhắn đã được tự động lưu trên máy. Chỉ bấm khi bạn muốn kéo thêm tin nhắn cũ từ điện thoại Zalo!">
+                <svg id="sync-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span id="sync-text">Sao lưu từ điện thoại</span>
+              </button>
+              <button id="btn-clear-history" class="btn-secondary-sm">Xóa nhật ký</button>
+              <button id="btn-test-in-tab" class="btn-secondary-sm">+ Thử tin mẫu</button>
+            </div>
+          </div>
+
+          <!-- GIAO DIỆN HỘI THOẠI 2 CỘT CHUẨN ZALO -->
+          <div class="zalo-chat-container">
+            <!-- CỘT TRÁI: DANH SÁCH NGƯỜI NHẮN TIN / HỘI THOẠI -->
+            <div class="chat-sidebar">
+              <div class="chat-search-wrap">
+                <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="conversation-search" placeholder="Tìm người hoặc nhóm..." class="chat-search-input">
+              </div>
+
+              <!-- Thanh chuyển Tab: Tất cả / Cá nhân / Nhóm -->
+              <div class="chat-filter-tabs">
+                <button class="chat-filter-btn active" data-filter="all">Tất cả</button>
+                <button class="chat-filter-btn" data-filter="user">Cá nhân</button>
+                <button class="chat-filter-btn" data-filter="group">
+                  <span>Nhóm</span>
+                  <span class="filter-count" id="group-filter-count">0</span>
+                </button>
+              </div>
+
+              <div class="conversation-list" id="conversation-list">
+                <!-- Danh sách các cuộc hội thoại được render bằng JS -->
+              </div>
+            </div>
+
+            <!-- CỘT PHẢI: TOÀN BỘ NỘI DUNG TIN NHẮN CÓ THANH SCROLL -->
+            <div class="chat-main" id="chat-main">
+              <!-- Header cuộc trò chuyện đang chọn -->
+              <div class="chat-main-header" id="chat-main-header">
+                <div class="chat-header-user">
+                  <div class="chat-header-avatar" id="active-chat-avatar">Z</div>
+                  <div class="chat-header-meta">
+                    <h3 id="active-chat-name">Chọn một cuộc trò chuyện</h3>
+                    <div class="chat-header-sub">
+                      <span id="active-chat-type" class="chat-header-badge">Chờ chọn</span>
+                      <span id="active-chat-count">0 tin nhắn</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="chat-header-actions">
+                  <button id="btn-toggle-group-poll" class="btn-icon-header" title="Tạo bình chọn nhóm (Vote)" style="display: none;">
+                    <span style="font-size: 15px;">📊</span>
+                  </button>
+                  <button id="btn-toggle-group-reminder" class="btn-icon-header" title="Tạo nhắc hẹn nhóm (Reminder)" style="display: none;">
+                    <span style="font-size: 15px;">⏰</span>
+                  </button>
+                  <button id="btn-toggle-inchat-search" class="btn-icon-header" title="Tìm kiếm tin nhắn trong cuộc trò chuyện (Ctrl+F)">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                  </button>
+                  <button id="btn-toggle-mute-chat" class="btn-icon-header" title="Tắt / Bật thông báo cuộc trò chuyện">
+                    <img id="icon-mute-header" src="../assets/zalo-icons/icon-mute.svg" width="16" height="16" alt="Muted" style="display: none; vertical-align: middle;">
+                    <svg id="icon-bell-header" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                  </button>
+                  <button id="btn-toggle-info-panel" class="btn-icon-header" title="Xem chi tiết hội thoại / thành viên nhóm">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Thanh tìm kiếm tin nhắn trong cuộc trò chuyện (In-chat Search) -->
+              <div class="inchat-search-bar" id="inchat-search-bar" style="display: none;">
+                <div class="inchat-search-input-wrap">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                  <input type="text" id="inchat-search-input" placeholder="Tìm kiếm tin nhắn trong cuộc trò chuyện..." autocomplete="off">
+                </div>
+                <div class="inchat-search-nav">
+                  <span id="inchat-search-count" class="inchat-search-count">0 kết quả</span>
+                  <button id="btn-inchat-search-prev" class="btn-search-nav" title="Tin nhắn trước đó">▲</button>
+                  <button id="btn-inchat-search-next" class="btn-search-nav" title="Tin nhắn tiếp theo">▼</button>
+                  <button id="btn-inchat-search-close" class="btn-search-close" title="Đóng tìm kiếm (Esc)">✕</button>
+                </div>
+              </div>
+
+              <!-- Thanh Ghim Tin Nhắn (Pinned Message Bar) -->
+              <div class="chat-pinned-bar" id="chat-pinned-bar" style="display: none;">
+                <div class="pinned-bar-icon" title="Tin nhắn đã ghim">📌</div>
+                <div class="pinned-bar-content" id="pinned-bar-content" title="Bấm để cuộn đến tin nhắn này">
+                  <span class="pinned-bar-sender" id="pinned-bar-sender">Tin ghim:</span>
+                  <span class="pinned-bar-text" id="pinned-bar-text">...</span>
+                </div>
+                <div class="pinned-bar-actions">
+                  <span class="pinned-bar-count" id="pinned-bar-count" style="display: none;">1/1</span>
+                  <button id="btn-pinned-prev" class="btn-pinned-nav" title="Tin ghim trước" style="display: none;">▲</button>
+                  <button id="btn-pinned-next" class="btn-pinned-nav" title="Tin ghim tiếp theo" style="display: none;">▼</button>
+                  <button id="btn-pinned-unpin" class="btn-pinned-close" title="Bỏ ghim tin nhắn này">✕</button>
+                </div>
+              </div>
+
+              <!-- Toàn bộ nội dung tin nhắn có scrollbar -->
+              <div class="chat-messages-scroll" id="chat-messages-scroll">
+                <!-- Lớp phủ Kéo Thả Tệp Tin / Ảnh -->
+                <div class="drag-drop-overlay" id="drag-drop-overlay" style="display: none;">
+                  <div class="drag-drop-card">
+                    <div class="drag-drop-icon">📥</div>
+                    <div class="drag-drop-title">Thả tệp tin hoặc ảnh vào đây</div>
+                    <div class="drag-drop-sub">Tệp tin sẽ được đính kèm vào cuộc trò chuyện</div>
+                  </div>
+                </div>
+                <div class="empty-feed" id="feed-empty">
+                  <div class="empty-icon-lg">💬</div>
+                  <h3>Chưa chọn cuộc trò chuyện nào</h3>
+                  <p>Chọn một người hoặc nhóm bên trái để xem toàn bộ tin nhắn</p>
+                </div>
+              </div>
+
+              <!-- Thanh trích dẫn trả lời (Quote preview) -->
+              <div id="chat-quote-bar" class="chat-quote-bar" style="display: none;">
+                <div class="chat-quote-indicator"></div>
+                <div class="chat-quote-content">
+                  <span class="chat-quote-title" id="chat-quote-title">Trả lời</span>
+                  <span class="chat-quote-text" id="chat-quote-text">...</span>
+                </div>
+                <button id="btn-cancel-quote" class="btn-cancel-quote" title="Hủy trích dẫn">✕</button>
+              </div>
+
+              <!-- Thanh xem trước tệp tin đính kèm -->
+              <div id="chat-attach-preview" class="chat-attach-preview" style="display: none;">
+                <div class="attach-preview-icon">📎</div>
+                <div class="attach-preview-info">
+                  <span class="attach-preview-name" id="attach-preview-name">file.jpg</span>
+                  <span class="attach-preview-hint">Đính kèm sẽ được gửi cùng tin nhắn</span>
+                </div>
+                <button id="btn-cancel-attach" class="btn-cancel-attach" title="Hủy đính kèm">✕</button>
+              </div>
+
+              <!-- Thanh nhập phản hồi nhanh -->
+              <div class="chat-input-bar-wrap">
+                <!-- Popup Bảng chọn Emoji và Sticker Zalo -->
+                <div id="emoji-picker-container" class="emoji-picker-container" style="display: none;">
+                  <div class="emoji-picker-header">
+                    <div class="emoji-picker-tabs">
+                      <button class="emoji-tab-btn active" id="tab-btn-stickers" data-tab="stickers">🐱 Sticker Zalo</button>
+                      <button class="emoji-tab-btn" id="tab-btn-emojis" data-tab="emojis">😀 Biểu cảm</button>
+                    </div>
+                    <button id="btn-close-emoji-picker" class="btn-close-emoji" title="Đóng">✕</button>
+                  </div>
+
+                  <!-- Thanh tìm kiếm & danh mục riêng cho Sticker -->
+                  <div id="sticker-toolbar-wrap" class="sticker-toolbar-wrap">
+                    <div class="sticker-search-box">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                      </svg>
+                      <input type="text" id="sticker-search-input" placeholder="Tìm kiếm sticker: vui, haha, ok, yeu, chao...">
+                    </div>
+                    <div class="sticker-cat-pills" id="sticker-cat-pills">
+                      <button class="stk-cat-pill active" data-cat="hot">🔥 Nổi bật</button>
+                      <button class="stk-cat-pill" data-cat="ami">🐱 Mèo Ami</button>
+                      <button class="stk-cat-pill" data-cat="haha">😂 Haha</button>
+                      <button class="stk-cat-pill" data-cat="ok">👍 OK / Cảm ơn</button>
+                      <button class="stk-cat-pill" data-cat="love">💖 Yêu thương</button>
+                      <button class="stk-cat-pill" data-cat="heo">🐷 Bé Heo</button>
+                      <button class="stk-cat-pill" data-cat="aka">🐰 Quỳnh Aka</button>
+                    </div>
+                  </div>
+
+                  <div class="emoji-picker-body">
+                    <!-- Tab Stickers (Mặc định mở) -->
+                    <div id="sticker-tab-content" class="emoji-tab-panel active">
+                      <div class="sticker-grid" id="sticker-grid">
+                        <!-- Render stickers bằng JS -->
+                      </div>
+                    </div>
+                    <!-- Tab Emojis -->
+                    <div id="emoji-tab-content" class="emoji-tab-panel">
+                      <div class="emoji-grid" id="emoji-grid">
+                        <!-- Render emojis bằng JS -->
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="chat-input-bar">
+                  <button id="btn-toggle-sticker" class="btn-chat-tool" title="Gửi Nhãn dán Sticker Zalo">
+                    <img src="../assets/zalo-icons/icon-suggest-sticker.svg" class="tool-icon-svg" alt="Sticker" onerror="this.outerHTML='🐱';">
+                  </button>
+                  <button id="btn-toggle-emoji" class="btn-chat-tool" title="Biểu tượng cảm xúc Emoji">
+                    <img src="../assets/zalo-icons/Smile_24_emoji.svg" class="tool-icon-svg" alt="Emoji" onerror="this.outerHTML='😊';">
+                  </button>
+                  <button id="btn-quick-photo" class="btn-chat-tool" title="Gửi hình ảnh">
+                    <img src="../assets/zalo-icons/icon-photo.svg" class="tool-icon-svg" alt="Ảnh" onerror="this.outerHTML='🖼️';">
+                  </button>
+                  <button id="btn-attach-file" class="btn-chat-tool" title="Đính kèm tệp tin">
+                    <img src="../assets/zalo-icons/icon-folder.svg" class="tool-icon-svg" alt="File" onerror="this.outerHTML='📎';">
+                  </button>
+                  <input type="text" id="chat-reply-input" placeholder="Nhập tin nhắn trả lời..." autocomplete="off">
+                  <button id="btn-send-chat-reply" class="btn-send-reply">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                    <span>Gửi</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- CỘT THÔNG TIN HỘI THOẠI & THÀNH VIÊN NHÓM (Side Drawer) -->
+            <div class="chat-info-panel" id="chat-info-panel" style="display: none;">
+              <div class="chat-info-header">
+                <h4 id="info-panel-title">Thông tin hội thoại</h4>
+                <button id="btn-close-info-panel" class="btn-close-info">✕</button>
+              </div>
+              <div class="chat-info-body" id="chat-info-body">
+                <!-- Nội dung thông tin render bằng JS -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: CÀI ĐẶT BONG BÓNG CHAT -->
+        <section id="tab-settings" class="tab-panel">
+          <div class="panel-header">
+            <h2>Cấu hình Bong bóng Chat nổi</h2>
+            <p>Tùy chỉnh hành vi hiển thị của popup hình tròn trên màn hình máy tính</p>
+          </div>
+
+          <div class="settings-grid">
+            <div class="setting-card">
+              <div class="setting-info">
+                <h4>Hiển thị Bong bóng trên màn hình</h4>
+                <p>Bong bóng chat hình tròn sẽ luôn nổi trên các ứng dụng khác (Always on top)</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="toggle-bubble-visible" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="setting-card">
+              <div class="setting-info">
+                <h4>Đặt lại vị trí mặc định</h4>
+                <p>Di chuyển bong bóng về góc dưới bên phải màn hình nếu bạn vô tình kéo ra ngoài</p>
+              </div>
+              <button id="btn-reset-bubble-pos" class="btn-secondary">Đặt lại vị trí</button>
+            </div>
+
+            <div class="setting-card">
+              <div class="setting-info">
+                <h4>Âm thanh thông báo khi có tin nhắn</h4>
+                <p>Phát âm thanh chuông chime du dương khi có tin nhắn Zalo mới tới</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="toggle-sound" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="setting-card full-width">
+              <h4>Hướng dẫn sử dụng Bong bóng chat tròn:</h4>
+              <ul class="guide-list">
+                <li>✨ <strong>Kéo thả (Drag & Drop):</strong> Bấm giữ chuột vào icon tròn để di chuyển đến bất kỳ vị trí nào trên màn hình. Vị trí sẽ được tự động lưu lại.</li>
+                <li>💬 <strong>Bấm vào icon tròn:</strong> Mở rộng thành khung xem tin nhắn đẹp mắt, hiển thị tên người gửi, thời gian và nội dung.</li>
+                <li>⚡ <strong>Trả lời nhanh:</strong> Bạn có thể gõ nội dung và gửi tin nhắn phản hồi trực tiếp ngay trên popup bong bóng chat.</li>
+                <li>🔴 <strong>Huy hiệu chưa đọc:</strong> Số màu đỏ hiển thị số tin nhắn mới chưa xem kèm hiệu ứng sóng phát sáng (Pulsing Glow).</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+    </div>
+  </div>
+
+  <!-- Modal Chờ Đồng Bộ Tin Nhắn Điện Thoại -->
+  <div class="sync-modal-overlay" id="sync-modal-overlay">
+    <div class="sync-modal-card">
+      <div class="sync-anim-wrap">
+        <div class="sync-anim-pulse" id="sync-anim-pulse"></div>
+        <div class="sync-anim-icon" id="sync-anim-icon">📱</div>
+      </div>
+
+      <h3 class="sync-modal-title" id="sync-modal-title">Đang chờ xác nhận trên điện thoại...</h3>
+      <p class="sync-modal-desc" id="sync-modal-desc">Vui lòng mở ứng dụng <strong>Zalo trên điện thoại</strong> của bạn và bấm chọn <strong>"ĐỒNG BỘ NGAY"</strong>.</p>
+
+      <div class="sync-steps-box">
+        <div class="sync-step-row active" id="sync-step-1">
+          <span class="sync-step-badge">1</span>
+          <span class="sync-step-text">Gửi popup yêu cầu tới Zalo điện thoại</span>
+        </div>
+        <div class="sync-step-row" id="sync-step-2">
+          <span class="sync-step-badge">2</span>
+          <span class="sync-step-text">Chờ bạn bấm <strong>"ĐỒNG BỘ NGAY"</strong> trên điện thoại</span>
+        </div>
+        <div class="sync-step-row" id="sync-step-3">
+          <span class="sync-step-badge">3</span>
+          <span class="sync-step-text">Truyền và nạp lịch sử tin nhắn vào ứng dụng</span>
+        </div>
+      </div>
+
+      <div class="sync-progress-bar-wrap">
+        <div class="sync-progress-bar-fill" id="sync-progress-fill"></div>
+      </div>
+
+      <div class="sync-timer-label" id="sync-timer-label">Thời gian chờ còn lại: 60s</div>
+
+      <button id="btn-cancel-sync-modal" class="sync-modal-btn-cancel">Đóng / Hủy bỏ</button>
+    </div>
+  </div>
+
+  <!-- Modal Kiểm tra Lịch sử & Trạng thái Đồng bộ -->
+  <div id="sync-status-modal-overlay" class="forward-modal-overlay" style="display: none;">
+    <div class="forward-modal-card" style="max-width: 480px;">
+      <div class="forward-modal-header">
+        <h3>📋 Lịch sử & Kiểm tra Đồng bộ</h3>
+        <button id="btn-close-sync-status-modal" class="btn-close-forward">✕</button>
+      </div>
+      <div style="padding: 18px 20px;">
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;">
+          <div style="font-size: 13px; font-weight: 700; color: #38BDF8; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+            <span>💾 Dữ liệu Lưu trữ Cục bộ (Offline Cache)</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12.5px;">
+            <div>
+              <div style="color: #94A3B8;">Tổng tin nhắn lưu:</div>
+              <div id="stat-total-messages" style="font-size: 16px; font-weight: 700; color: #F8FAFC; margin-top: 2px;">0</div>
+            </div>
+            <div>
+              <div style="color: #94A3B8;">Dung lượng file lưu:</div>
+              <div id="stat-file-size" style="font-size: 16px; font-weight: 700; color: #F8FAFC; margin-top: 2px;">0 KB</div>
+            </div>
+            <div>
+              <div style="color: #94A3B8;">Cuộc hội thoại:</div>
+              <div id="stat-total-conversations" style="font-size: 15px; font-weight: 600; color: #E2E8F0; margin-top: 2px;">0</div>
+            </div>
+            <div>
+              <div style="color: #94A3B8;">Nhóm & Bạn bè:</div>
+              <div id="stat-total-contacts" style="font-size: 14px; font-weight: 600; color: #E2E8F0; margin-top: 2px;">0 nhóm • 0 bạn</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px;">
+          <div style="font-size: 13px; font-weight: 700; color: #34D399; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+            <span>⚡ Tình trạng Kết nối & Cơ chế Đồng bộ</span>
+          </div>
+          <div style="font-size: 12.5px; color: #CBD5E1; display: flex; flex-direction: column; gap: 7px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #94A3B8;">Trạng thái Real-time:</span>
+              <span id="stat-ws-status" style="color: #34D399; font-weight: 600;">🟢 Đang kết nối ổn định</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #94A3B8;">Cơ chế lưu trữ:</span>
+              <span style="color: #F8FAFC;">Tự động lưu ngay khi có tin mới</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #94A3B8;">Đồng bộ gần nhất:</span>
+              <span id="stat-last-sync-time" style="color: #F8FAFC;">Vừa xong</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; flex-direction: column;">
+          <button id="btn-modal-quick-sync" style="padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 600; background: #0068FF; color: white; border: none; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+            <span>⚡ Đồng bộ nhanh tin nhắn gần đây (1-2s)</span>
+          </button>
+          <button id="btn-modal-open-folder" style="padding: 9px; border-radius: 8px; font-size: 12.5px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: #CBD5E1; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+            <span>📁 Mở thư mục lưu trữ dữ liệu</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Lightbox Modal Xem Ảnh Lớn -->
+  <div id="image-lightbox-modal" class="image-lightbox-modal" style="display: none;">
+    <div class="lightbox-overlay" id="lightbox-overlay"></div>
+    <div class="lightbox-content">
+      <div class="lightbox-toolbar">
+        <button id="btn-lightbox-external" class="lightbox-tool-btn" title="Mở ảnh trong trình duyệt">↗️ Mở gốc</button>
+        <button id="btn-lightbox-close" class="lightbox-tool-btn close-btn" title="Đóng">✕</button>
+      </div>
+      <div class="lightbox-img-wrap">
+        <img id="lightbox-img" src="" alt="Zalo Full Image">
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Menu Chuột Phải Cho Tin Nhắn -->
+  <div id="chat-context-menu" class="chat-context-menu" style="display: none;">
+    <div class="ctx-item" id="ctx-copy-text">
+      <span class="ctx-icon">📋</span>
+      <span class="ctx-label">Sao chép tin nhắn</span>
+    </div>
+    <div class="ctx-item" id="ctx-copy-link" style="display: none;">
+      <span class="ctx-icon">🔗</span>
+      <span class="ctx-label">Sao chép liên kết</span>
+    </div>
+    <div class="ctx-item" id="ctx-forward-msg">
+      <span class="ctx-icon">↗️</span>
+      <span class="ctx-label">Chuyển tiếp tin nhắn</span>
+    </div>
+    <div class="ctx-item" id="ctx-reply-msg">
+      <span class="ctx-icon">↩️</span>
+      <span class="ctx-label">Trả lời / Trích dẫn</span>
+    </div>
+    <div class="ctx-item" id="ctx-pin-msg">
+      <span class="ctx-icon">📌</span>
+      <span class="ctx-label" id="ctx-pin-label">Ghim tin nhắn</span>
+    </div>
+    <div class="ctx-divider" id="ctx-file-divider" style="display: none;"></div>
+    <div class="ctx-item" id="ctx-download-file" style="display: none;">
+      <span class="ctx-icon">📥</span>
+      <span class="ctx-label">Tải về máy tính</span>
+    </div>
+    <div class="ctx-item" id="ctx-open-file" style="display: none;">
+      <span class="ctx-icon">📄</span>
+      <span class="ctx-label">Mở tệp tin</span>
+    </div>
+    <div class="ctx-item" id="ctx-show-folder" style="display: none;">
+      <span class="ctx-icon">📂</span>
+      <span class="ctx-label">Mở thư mục chứa</span>
+    </div>
+    <div class="ctx-divider" id="ctx-undo-divider" style="display: none;"></div>
+    <div class="ctx-item danger" id="ctx-undo-msg" style="display: none;">
+      <span class="ctx-icon">🚫</span>
+      <span class="ctx-label">Thu hồi tin nhắn</span>
+    </div>
+  </div>
+
+  <!-- Context Menu Chuột Phải Cho Cuộc Trò Chuyện (Conversation List Context Menu) -->
+  <div id="conv-context-menu" class="chat-context-menu" style="display: none;">
+    <div class="ctx-item" id="ctx-conv-pin">
+      <span class="ctx-icon">📌</span>
+      <span class="ctx-label" id="ctx-conv-pin-label">Ghim hội thoại</span>
+    </div>
+    <div class="ctx-item" id="ctx-conv-mute">
+      <span class="ctx-icon" id="ctx-conv-mute-icon">🔕</span>
+      <span class="ctx-label" id="ctx-conv-mute-label">Tắt thông báo</span>
+    </div>
+    <div class="ctx-item" id="ctx-conv-unread">
+      <span class="ctx-icon">✉️</span>
+      <span class="ctx-label">Đánh dấu chưa đọc</span>
+    </div>
+    <div class="ctx-divider"></div>
+    <div class="ctx-item danger" id="ctx-conv-clear">
+      <span class="ctx-icon">🗑️</span>
+      <span class="ctx-label">Xóa lịch sử trên máy</span>
+    </div>
+  </div>
+
+  <!-- Modal Chuyển Tiếp Tin Nhắn (Forward Modal) -->
+  <div id="forward-modal-overlay" class="forward-modal-overlay" style="display: none;">
+    <div class="forward-modal-card">
+      <div class="forward-modal-header">
+        <h3>Chuyển tiếp tin nhắn</h3>
+        <button id="btn-close-forward-modal" class="btn-close-forward">✕</button>
+      </div>
+
+      <!-- Xem trước nội dung chuyển tiếp -->
+      <div class="forward-preview-box" id="forward-preview-box">
+        <div class="forward-preview-title">Nội dung chuyển tiếp:</div>
+        <div class="forward-preview-content" id="forward-preview-content">...</div>
+      </div>
+
+      <!-- Ô tìm kiếm người nhận -->
+      <div class="forward-search-box">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="forward-search-input" placeholder="Tìm bạn bè hoặc nhóm để chuyển tiếp...">
+      </div>
+
+      <!-- Danh sách đối tượng có thể chuyển tiếp -->
+      <div class="forward-target-list" id="forward-target-list">
+        <!-- Render bằng JS -->
+      </div>
+
+      <div class="forward-modal-footer">
+        <div class="forward-selected-hint" id="forward-selected-hint">Chưa chọn người nhận</div>
+        <div class="forward-footer-actions">
+          <button id="btn-cancel-forward" class="btn-secondary">Hủy</button>
+          <button id="btn-confirm-forward" class="btn-primary" disabled>Gửi chuyển tiếp</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Tạo Bình Chọn Nhóm (Group Poll Modal) -->
+  <div id="poll-modal-overlay" class="forward-modal-overlay" style="display: none;">
+    <div class="forward-modal-card poll-modal-card">
+      <div class="forward-modal-header">
+        <h3>📊 Tạo bình chọn nhóm</h3>
+        <button id="btn-close-poll-modal" class="btn-close-forward">✕</button>
+      </div>
+      <div class="poll-modal-body">
+        <div class="form-group-poll">
+          <label class="form-label-poll">Câu hỏi bình chọn:</label>
+          <input type="text" id="poll-question-input" class="form-input-poll" placeholder="Đặt câu hỏi bình chọn cho cả nhóm...">
+        </div>
+        <div class="form-group-poll">
+          <label class="form-label-poll">Các phương án lựa chọn:</label>
+          <div id="poll-options-container" class="poll-options-container">
+            <!-- Render danh sách options input -->
+          </div>
+          <button id="btn-add-poll-option" class="btn-add-option">+ Thêm phương án</button>
+        </div>
+        <div class="poll-checkbox-group">
+          <label class="poll-checkbox-label">
+            <input type="checkbox" id="poll-multi-choice">
+            <span>Cho phép chọn nhiều phương án</span>
+          </label>
+          <label class="poll-checkbox-label">
+            <input type="checkbox" id="poll-anonymous">
+            <span>Bình chọn ẩn danh</span>
+          </label>
+        </div>
+      </div>
+      <div class="forward-modal-footer">
+        <div class="forward-selected-hint" id="poll-hint">Tối thiểu 2 phương án</div>
+        <div class="forward-footer-actions">
+          <button id="btn-cancel-poll" class="btn-secondary">Hủy</button>
+          <button id="btn-confirm-poll" class="btn-primary">Tạo bình chọn</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Tạo Lịch Nhắc Hẹn (Group Reminder Modal) -->
+  <div id="reminder-modal-overlay" class="forward-modal-overlay" style="display: none;">
+    <div class="forward-modal-card reminder-modal-card">
+      <div class="forward-modal-header">
+        <h3>⏰ Tạo nhắc hẹn cuộc trò chuyện</h3>
+        <button id="btn-close-reminder-modal" class="btn-close-forward">✕</button>
+      </div>
+      <div class="reminder-modal-body">
+        <div class="form-group-poll">
+          <label class="form-label-poll">Nội dung nhắc việc:</label>
+          <input type="text" id="reminder-title-input" class="form-input-poll" placeholder="Ví dụ: Nộp báo cáo tuần, Họp trực tuyến, Sinh nhật...">
+        </div>
+        <div class="form-group-poll">
+          <label class="form-label-poll">Thời gian nhắc hẹn:</label>
+          <input type="datetime-local" id="reminder-time-input" class="form-input-poll">
+        </div>
+        <div class="form-group-poll">
+          <label class="form-label-poll">Chọn biểu tượng:</label>
+          <div class="reminder-emoji-row">
+            <span class="reminder-emoji-pick active" data-emoji="⏰">⏰</span>
+            <span class="reminder-emoji-pick" data-emoji="📢">📢</span>
+            <span class="reminder-emoji-pick" data-emoji="🎂">🎂</span>
+            <span class="reminder-emoji-pick" data-emoji="☕">☕</span>
+            <span class="reminder-emoji-pick" data-emoji="⚽">⚽</span>
+            <span class="reminder-emoji-pick" data-emoji="💻">💻</span>
+            <span class="reminder-emoji-pick" data-emoji="📝">📝</span>
+          </div>
+        </div>
+      </div>
+      <div class="forward-modal-footer">
+        <div class="forward-selected-hint" id="reminder-hint">Thông báo tới mọi người</div>
+        <div class="forward-footer-actions">
+          <button id="btn-cancel-reminder" class="btn-secondary">Hủy</button>
+          <button id="btn-confirm-reminder" class="btn-primary">Tạo nhắc hẹn</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Xem Hồ Sơ Cá Nhân Bạn Bè (Profile Modal) -->
+  <div id="profile-modal-overlay" class="forward-modal-overlay" style="display: none;">
+    <div class="forward-modal-card profile-modal-card">
+      <div class="profile-card-header">
+        <button id="btn-close-profile-modal" class="btn-close-profile">✕</button>
+        <div class="profile-avatar-wrap">
+          <div id="profile-avatar-box" class="profile-avatar-box">Z</div>
+        </div>
+      </div>
+      <div class="profile-card-body">
+        <h3 id="profile-display-name" class="profile-name">Tên bạn bè</h3>
+        <div id="profile-sub-title" class="profile-sub">Bạn bè Zalo</div>
+
+        <div class="profile-info-list">
+          <div class="profile-info-row">
+            <span class="profile-info-label">Mã Zalo UID:</span>
+            <span id="profile-uid" class="profile-info-val">...</span>
+          </div>
+          <div class="profile-info-row">
+            <span class="profile-info-label">Tên gốc Zalo:</span>
+            <span id="profile-zalo-name" class="profile-info-val">...</span>
+          </div>
+          <div class="profile-info-row">
+            <span class="profile-info-label">Quan hệ:</span>
+            <span id="profile-relation" class="profile-info-val">Bạn trong danh bạ</span>
+          </div>
+        </div>
+
+        <div class="profile-actions-row">
+          <button id="btn-profile-copy-id" class="btn-profile-action" title="Sao chép ID">
+            <span>📋</span> Sao chép UID
+          </button>
+          <button id="btn-profile-send-msg" class="btn-profile-action primary" title="Nhắn tin ngay">
+            <span>💬</span> Nhắn tin
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
