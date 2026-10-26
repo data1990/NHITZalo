@@ -12,6 +12,7 @@
 
 - 🟢 **Đăng nhập bằng mã QR tiện lợi**: Quét mã QR trực tiếp ngay trên màn hình bằng ứng dụng Zalo trên điện thoại (không cần trích xuất cookie thủ công).
 - 💾 **Tự động lưu phiên (Auto Login)**: Tự động lưu session trên máy tính cục bộ để các lần mở ứng dụng tiếp theo tự động kết nối mà không cần quét lại mã QR.
+- 🔐 **Nhiều tài khoản trên cùng máy**: Chọn tài khoản khi mở ứng dụng. Mật khẩu là tùy chọn cho từng tài khoản; nút **Tài khoản trên máy này** mở modal để đặt hoặc gỡ mật khẩu và chuyển tài khoản. Mỗi tài khoản có phiên Zalo, tin nhắn, danh bạ, nhóm và cài đặt bong bóng riêng. Mật khẩu chỉ khóa truy cập trong ứng dụng; tệp lịch sử trên ổ đĩa chưa được mã hóa bằng mật khẩu này.
 - 🔴 **Bong bóng chat tròn nổi (Floating Bubble)**:
   - Luôn nổi trên các ứng dụng khác (`Always on Top`).
   - Hỗ trợ **kéo thả chuột (Drag & Drop)** đến mọi vị trí trên màn hình. Tự động lưu vị trí người dùng đã chọn.
@@ -38,12 +39,13 @@ Mở PowerShell hoặc Command Prompt tại thư mục dự án và chạy:
 ```bash
 npm start
 ```
-
+npm install
+npm run build:win
 ---
 
 ## 📖 Hướng Dẫn Sử Dụng
 
-1. **Khởi chạy ứng dụng**: Bảng điều khiển và bong bóng chat hình tròn màu xanh Zalo sẽ xuất hiện ở góc màn hình.
+1. **Khởi chạy ứng dụng**: Chọn tài khoản. Lần đầu nâng cấp, bấm **Bỏ qua mật khẩu và mở** để dùng ngay, hoặc bấm **Đặt mật khẩu** nếu muốn khóa tài khoản. Sau khi chọn, bảng điều khiển và bong bóng chat xuất hiện.
 2. **Đăng nhập Zalo**:
    - Trong bảng điều khiển, bấm **"Tạo mã QR đăng nhập"**.
    - Mở app **Zalo** trên điện thoại > Chọn biểu tượng **Quét mã QR** > Quét mã trên màn hình máy tính > Bấm **Đăng nhập**.

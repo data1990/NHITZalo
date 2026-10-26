@@ -1,12 +1,37 @@
 {
   "name": "nhitzalo",
-  "version": "1.0.0",
+  "version": "1.1.7",
   "description": "",
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron .",
     "postinstall": "node scripts/patch-zalo.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/*.test.js",
+    "build:win": "electron-builder --win nsis --x64"
+  },
+  "build": {
+    "appId": "vn.ngochoangit.nhitzalo",
+    "productName": "NHIT Zalo Bubble Notifier",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "src/main/zaloBackupDecoderChild.js",
+      "src/main/zaloBackupMediaChild.js"
+    ],
+    "win": {
+      "icon": "src/assets/logo.png",
+      "target": "nsis",
+      "artifactName": "NHIT-Zalo-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "keywords": [],
   "author": "",
@@ -14,9 +39,11 @@
   "type": "commonjs",
   "dependencies": {
     "qrcode": "^1.5.4",
+    "tough-cookie": "^5.1.2",
     "zalo-api-final": "^2.1.1"
   },
   "devDependencies": {
-    "electron": "^44.7.2"
+    "electron": "^44.7.2",
+    "electron-builder": "^26.18.0"
   }
 }

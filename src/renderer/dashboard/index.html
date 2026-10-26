@@ -63,6 +63,13 @@
             <span>Tin nhắn Zalo</span>
           </button>
 
+          <button class="nav-item" data-tab="tab-contacts">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="9" cy="8" r="3"></circle><path d="M3 21v-2a6 6 0 0 1 12 0v2M17 11a3 3 0 1 0 0-6M19 21v-2a6 6 0 0 0-3-5.2"></path>
+            </svg>
+            <span>Danh bạ & Nhóm</span>
+          </button>
+
           <button class="nav-item" data-tab="tab-settings">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3"></circle>
@@ -183,6 +190,16 @@
                 </div>
               </div>
             </div>
+            <button id="btn-open-local-account-modal" type="button" class="account-manage-trigger"
+              aria-haspopup="dialog" aria-controls="local-account-modal">
+              <span class="account-manage-trigger-icon" aria-hidden="true">🔒</span>
+              <span class="account-manage-trigger-copy">
+                <strong>Tài khoản trên máy này</strong>
+                <span id="local-account-summary">Đang tải tài khoản...</span>
+                <small>Quản lý tài khoản và mật khẩu</small>
+              </span>
+              <span class="account-manage-trigger-arrow" aria-hidden="true">›</span>
+            </button>
           </div>
         </section>
 
@@ -194,6 +211,7 @@
               <p id="local-storage-status-desc">Dữ liệu được lưu trữ tự động trên máy tính • Mở lên có sẵn, không cần đồng bộ lại</p>
             </div>
             <div class="header-tools">
+              <button id="btn-search-all" class="btn-secondary-sm" title="Tìm trong toàn bộ lịch sử tin nhắn" aria-label="Tìm trong toàn bộ lịch sử tin nhắn">Tìm toàn bộ tin</button>
               <button id="btn-sync-history-status" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px;" title="Kiểm tra tình trạng lưu trữ & lịch sử đồng bộ tin nhắn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -204,7 +222,7 @@
                 </svg>
                 <span>Kiểm tra đồng bộ</span>
               </button>
-              <button id="btn-quick-sync-cloud" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px; color: #38BDF8; border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.08);" title="Đồng bộ nhanh tin nhắn gần đây từ Cloud/Socket (1-2s, không cần mở điện thoại)">
+              <button id="btn-quick-sync-cloud" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px; color: #38BDF8; border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.08);" title="Tải tin nhắn gần đây từ kết nối Zalo, không cần mở điện thoại">
                 <span id="quick-sync-icon" style="font-size: 13px;">⚡</span>
                 <span id="quick-sync-text">Đồng bộ nhanh</span>
               </button>
@@ -217,11 +235,11 @@
                 </svg>
                 <span>Làm mới Nhóm</span>
               </button>
-              <button id="btn-sync-messages" class="btn-primary-sm" style="display: flex; align-items: center; gap: 6px; background: #0068FF;" title="Tin nhắn đã được tự động lưu trên máy. Chỉ bấm khi bạn muốn kéo thêm tin nhắn cũ từ điện thoại Zalo!">
+              <button id="btn-sync-messages" class="btn-primary-sm" style="display: flex; align-items: center; gap: 6px; background: #0068FF;" title="Gửi yêu cầu đồng bộ tới Zalo trên điện thoại">
                 <svg id="sync-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
                 </svg>
-                <span id="sync-text">Sao lưu từ điện thoại</span>
+                <span id="sync-text">Đồng bộ từ điện thoại</span>
               </button>
               <button id="btn-clear-history" class="btn-secondary-sm">Xóa nhật ký</button>
               <button id="btn-test-in-tab" class="btn-secondary-sm">+ Thử tin mẫu</button>
@@ -249,6 +267,9 @@
                   <span class="filter-count" id="group-filter-count">0</span>
                 </button>
               </div>
+              <button id="pinned-conversations-filter" class="pinned-conversations-filter" type="button" title="Xem người và nhóm đã ghim">
+                <span>📌 Đã ghim</span><span id="pinned-conversations-count">0</span>
+              </button>
 
               <div class="conversation-list" id="conversation-list">
                 <!-- Danh sách các cuộc hội thoại được render bằng JS -->
@@ -297,6 +318,7 @@
                       <line x1="12" y1="8" x2="12.01" y2="8"></line>
                     </svg>
                   </button>
+                  <button id="btn-show-pinned" class="btn-icon-header" title="Tin nhắn đã ghim; nhấp chuột phải vào tin nhắn để ghim" aria-label="Xem tin nhắn đã ghim">📌</button>
                 </div>
               </div>
 
@@ -455,6 +477,25 @@
           </div>
         </section>
 
+        <!-- DANH BẠ VÀ NHÓM -->
+        <section id="tab-contacts" class="tab-panel">
+          <div class="panel-header-row">
+            <div><h2>Danh bạ & Nhóm</h2><p>Xem bạn bè, nhóm và mở hội thoại nhanh</p></div>
+            <button id="btn-refresh-contacts" class="btn-secondary-sm" type="button">Làm mới</button>
+          </div>
+          <div class="directory-toolbar">
+            <label for="directory-search">Tìm trong danh bạ</label>
+            <input id="directory-search" type="search" placeholder="Tên bạn bè hoặc nhóm..." autocomplete="off">
+            <div class="directory-filters" role="group" aria-label="Lọc danh bạ">
+              <button type="button" class="active" data-directory-filter="all">Tất cả</button>
+              <button type="button" data-directory-filter="friends">Bạn bè</button>
+              <button type="button" data-directory-filter="groups">Nhóm</button>
+            </div>
+          </div>
+          <div id="directory-status" role="status" aria-live="polite"></div>
+          <div id="directory-list" class="directory-list"></div>
+        </section>
+
         <!-- TAB 3: CÀI ĐẶT BONG BÓNG CHAT -->
         <section id="tab-settings" class="tab-panel">
           <div class="panel-header">
@@ -510,6 +551,33 @@
     </div>
   </div>
 
+  <dialog id="local-account-modal" class="local-account-modal" aria-labelledby="local-account-modal-title">
+    <div class="local-account-modal-header">
+      <div>
+        <p class="local-account-modal-kicker">Bảo vệ tài khoản trên máy này</p>
+        <h2 id="local-account-modal-title">Đặt mật khẩu để mở ứng dụng Zalo</h2>
+      </div>
+      <button id="btn-close-local-account-modal" type="button" class="local-account-modal-close" aria-label="Đóng">✕</button>
+    </div>
+    <div class="local-account-content">
+      <div class="local-account-identity">
+        <span class="local-account-avatar" aria-hidden="true">Z</span>
+        <div><span>Tài khoản đang dùng</span><strong id="local-account-name">Đang tải tài khoản...</strong></div>
+      </div>
+      <p id="local-account-password-note" class="local-account-note">Mật khẩu chỉ dùng để khóa tài khoản trong ứng dụng trên máy này.</p>
+      <form id="account-password-form" autocomplete="off">
+        <label for="current-account-password">Mật khẩu hiện tại (nếu có)</label>
+        <input id="current-account-password" type="password" autocomplete="current-password">
+        <label for="new-account-password">Mật khẩu mới (để trống để gỡ mật khẩu)</label>
+        <input id="new-account-password" type="password" autocomplete="new-password" minlength="6">
+        <label for="confirm-account-password">Nhập lại mật khẩu mới (nếu đã nhập)</label>
+        <input id="confirm-account-password" type="password" autocomplete="new-password" minlength="6">
+        <button type="submit" class="local-account-submit">Cập nhật mật khẩu</button>
+      </form>
+      <button id="btn-switch-account" type="button" class="local-account-switch">Chuyển tài khoản</button>
+    </div>
+  </dialog>
+
   <!-- Modal Chờ Đồng Bộ Tin Nhắn Điện Thoại -->
   <div class="sync-modal-overlay" id="sync-modal-overlay">
     <div class="sync-modal-card">
@@ -518,21 +586,21 @@
         <div class="sync-anim-icon" id="sync-anim-icon">📱</div>
       </div>
 
-      <h3 class="sync-modal-title" id="sync-modal-title">Đang chờ xác nhận trên điện thoại...</h3>
-      <p class="sync-modal-desc" id="sync-modal-desc">Vui lòng mở ứng dụng <strong>Zalo trên điện thoại</strong> của bạn và bấm chọn <strong>"ĐỒNG BỘ NGAY"</strong>.</p>
+      <h3 class="sync-modal-title" id="sync-modal-title">Đang gửi yêu cầu tới điện thoại...</h3>
+      <p class="sync-modal-desc" id="sync-modal-desc">Đang chờ máy chủ Zalo chấp nhận yêu cầu đồng bộ.</p>
 
       <div class="sync-steps-box">
         <div class="sync-step-row active" id="sync-step-1">
           <span class="sync-step-badge">1</span>
-          <span class="sync-step-text">Gửi popup yêu cầu tới Zalo điện thoại</span>
+          <span class="sync-step-text">Gửi yêu cầu tới điện thoại</span>
         </div>
         <div class="sync-step-row" id="sync-step-2">
           <span class="sync-step-badge">2</span>
-          <span class="sync-step-text">Chờ bạn bấm <strong>"ĐỒNG BỘ NGAY"</strong> trên điện thoại</span>
+          <span class="sync-step-text">Xác nhận trên Zalo điện thoại</span>
         </div>
         <div class="sync-step-row" id="sync-step-3">
           <span class="sync-step-badge">3</span>
-          <span class="sync-step-text">Truyền và nạp lịch sử tin nhắn vào ứng dụng</span>
+          <span class="sync-step-text">Nhận và lưu dữ liệu đồng bộ</span>
         </div>
       </div>
 
@@ -540,9 +608,9 @@
         <div class="sync-progress-bar-fill" id="sync-progress-fill"></div>
       </div>
 
-      <div class="sync-timer-label" id="sync-timer-label">Thời gian chờ còn lại: 60s</div>
+      <div class="sync-timer-label" id="sync-timer-label">Thời gian chờ: 00:00</div>
 
-      <button id="btn-cancel-sync-modal" class="sync-modal-btn-cancel">Đóng / Hủy bỏ</button>
+      <button id="btn-cancel-sync-modal" class="sync-modal-btn-cancel">Đóng</button>
     </div>
   </div>
 
@@ -595,12 +663,16 @@
               <span style="color: #94A3B8;">Đồng bộ gần nhất:</span>
               <span id="stat-last-sync-time" style="color: #F8FAFC;">Vừa xong</span>
             </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #94A3B8;">Tự kiểm tra tin mới:</span>
+              <span id="stat-auto-check-time" style="color: #F8FAFC;">Đang chờ kết nối</span>
+            </div>
           </div>
         </div>
 
         <div style="display: flex; gap: 8px; flex-direction: column;">
           <button id="btn-modal-quick-sync" style="padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 600; background: #0068FF; color: white; border: none; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
-            <span>⚡ Đồng bộ nhanh tin nhắn gần đây (1-2s)</span>
+            <span>⚡ Đồng bộ nhanh tin nhắn gần đây</span>
           </button>
           <button id="btn-modal-open-folder" style="padding: 9px; border-radius: 8px; font-size: 12.5px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: #CBD5E1; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
             <span>📁 Mở thư mục lưu trữ dữ liệu</span>
@@ -847,6 +919,28 @@
     </div>
   </div>
 
+  <div id="global-search-overlay" class="forward-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="global-search-title">
+    <div class="forward-modal-card global-search-card">
+      <div class="global-search-header">
+        <h3 id="global-search-title">Tìm trong lịch sử tin nhắn</h3>
+        <button id="global-search-close" type="button" aria-label="Đóng tìm kiếm">✕</button>
+      </div>
+      <label for="global-search-input">Từ khóa</label>
+      <input id="global-search-input" type="search" autocomplete="off" placeholder="Nhập ít nhất 2 ký tự...">
+      <div id="global-search-status" role="status" aria-live="polite">Nhập từ khóa để tìm trong tin nhắn đã lưu trên máy.</div>
+      <div id="global-search-results" class="global-search-results"></div>
+      <button id="global-search-more" type="button" style="display: none;">Tải thêm kết quả</button>
+    </div>
+  </div>
+
+  <script src="../../shared/accountStorage.js"></script>
+  <script src="../../shared/callMessage.js"></script>
+  <script src="accountModal.js"></script>
+  <script src="pinnedMessages.js"></script>
+  <script src="lazyHistory.js"></script>
+  <script src="voiceMessage.js"></script>
+  <script src="../../shared/photoCaption.js"></script>
+  <script src="linkPreview.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

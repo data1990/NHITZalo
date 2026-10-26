@@ -6,11 +6,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logoutZalo: () => ipcRenderer.invoke('zalo-logout'),
   checkSavedSession: () => ipcRenderer.invoke('zalo-check-session'),
   tryAutoLogin: () => ipcRenderer.invoke('zalo-auto-login'),
+  getCurrentAccount: () => ipcRenderer.invoke('account-current'),
+  switchAccount: () => ipcRenderer.invoke('account-switch'),
+  changeAccountPassword: (current, next) => ipcRenderer.invoke('account-change-password', current, next),
+  onAccountNameUpdated: (callback) => {
+    const subscription = (event, name) => callback(name);
+    ipcRenderer.on('account-name-updated', subscription);
+    return () => ipcRenderer.removeListener('account-name-updated', subscription);
+  },
   syncOldMessages: () => ipcRenderer.invoke('zalo-sync-old-messages'),
   quickSyncMessages: () => ipcRenderer.invoke('zalo-quick-sync-messages'),
   getSyncStatus: () => ipcRenderer.invoke('zalo-get-sync-status'),
   openDataFolder: () => ipcRenderer.invoke('open-data-folder'),
   getHistoryMessages: () => ipcRenderer.invoke('zalo-get-history-messages'),
+  getConversationHeads: () => ipcRenderer.invoke('zalo-get-conversation-heads'),
+  getMyCloudId: () => ipcRenderer.invoke('zalo-get-my-cloud-id'),
+  fetchCloudMessages: (cursor = '0', older = false) => ipcRenderer.invoke('zalo-fetch-cloud-messages', { cursor, older }),
+  getBubbleStartupMessages: () => ipcRenderer.invoke('zalo-get-bubble-startup'),
+  getThreadHistory: (threadId, limit = 50, offset = 0) => ipcRenderer.invoke('zalo-get-thread-history', { threadId, limit, offset }),
+  getLinkPreview: (url) => ipcRenderer.invoke('zalo-get-link-preview', url),
+  openExternalLink: (url) => ipcRenderer.invoke('zalo-open-external-link', url),
+  resolveGroupSenderNames: (threadId, senderIds) => ipcRenderer.invoke('zalo-resolve-group-senders', { threadId, senderIds }),
+  searchHistoryMessages: (query, limit = 50, offset = 0) => ipcRenderer.invoke('zalo-search-history', { query, limit, offset }),
   clearHistoryMessages: () => ipcRenderer.invoke('zalo-clear-history-messages'),
   getGroupsList: () => ipcRenderer.invoke('zalo-get-groups'),
   fetchGroupsList: () => ipcRenderer.invoke('zalo-fetch-groups'),
@@ -18,6 +35,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fetchFriendsList: () => ipcRenderer.invoke('zalo-fetch-friends'),
   fetchThreadMessages: (threadId, isGroup) => ipcRenderer.invoke('zalo-fetch-thread-messages', { threadId, isGroup }),
   sendReply: (threadId, content, isGroup, quote, attachments) => ipcRenderer.invoke('zalo-send-reply', { threadId, content, isGroup, quote, attachments }),
+  forwardTextMessage: (message, threadId, isGroup) => ipcRenderer.invoke('zalo-forward-text', { message, threadId, isGroup }),
   sendReaction: (threadId, msgId, cliMsgId, icon, isGroup) => ipcRenderer.invoke('zalo-send-reaction', { threadId, msgId, cliMsgId, icon, isGroup }),
   undoMessage: (threadId, msgId, cliMsgId, isGroup) => ipcRenderer.invoke('zalo-undo-message', { threadId, msgId, cliMsgId, isGroup }),
   setPinnedConversation: (threadId, isPinned, isGroup) => ipcRenderer.invoke('zalo-set-pinned', { threadId, isPinned, isGroup }),
@@ -27,6 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isThreadMuted: (threadId) => ipcRenderer.invoke('zalo-is-thread-muted', threadId),
   setThreadMute: (threadId, isMuted, isGroup, duration) => ipcRenderer.invoke('zalo-set-thread-mute', { threadId, isMuted, isGroup, duration }),
   getGroupDetails: (groupId) => ipcRenderer.invoke('zalo-get-group-details', groupId),
+  getConversationTools: (threadId, isGroup) => ipcRenderer.invoke('zalo-get-conversation-tools', { threadId, isGroup }),
   createGroupPoll: (groupId, options) => ipcRenderer.invoke('zalo-create-poll', { groupId, options }),
   createGroupReminder: (threadId, options, isGroup) => ipcRenderer.invoke('zalo-create-reminder', { threadId, options, isGroup }),
   chooseFile: () => ipcRenderer.invoke('choose-file'),
@@ -66,6 +85,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const subscription = (event, ...args) => callback(...args);
     ipcRenderer.on('zalo-message-reaction', subscription);
     return () => ipcRenderer.removeListener('zalo-message-reaction', subscription);
+  },
+  onPhotoCaptionUpdated: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('zalo-photo-caption-updated', subscription);
+    return () => ipcRenderer.removeListener('zalo-photo-caption-updated', subscription);
   },
 
   // Bong bóng Chat Bubble

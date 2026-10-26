@@ -1,13 +1,79 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const ZaloManager = require('./zaloManager');
 const BubbleWindowManager = require('./bubbleWindow');
+const { fetchLinkPreview, safeHttpUrl } = require('./linkPreview');
+const AccountRegistry = require('./accountRegistry');
 
 let dashboardWindow = null;
 let bubbleManager = null;
 let zaloManager = null;
 let tray = null;
+let accountRegistry = null;
+let activeAccount = null;
+let activeAccountDir = null;
+let pickerWindow = null;
+
+function chooseAccount() {
+  return new Promise(resolve => {
+    let resolved = false;
+    pickerWindow = new BrowserWindow({
+      width: 560, height: 650, minWidth: 480, minHeight: 520,
+      title: 'Chọn tài khoản Zalo', icon: path.join(__dirname, '../assets/logo.png'),
+      backgroundColor: '#0b1220', autoHideMenuBar: true,
+      webPreferences: { preload: path.join(__dirname, 'accountPreload.js'),
+        nodeIntegration: false, contextIsolation: true }
+    });
+    pickerWindow.loadFile(path.join(__dirname, '../renderer/account/index.html'));
+    pickerWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    const fromPicker = event => !resolved && pickerWindow && !pickerWindow.isDestroyed() &&
+      event.sender === pickerWindow.webContents;
+    const finish = account => {
+      if (resolved) return;
+      resolved = true;
+      pickerWindow.hide();
+      resolve(account);
+    };
+    const failures = new Map();
+    ipcMain.handle('account-list', event => {
+      if (!fromPicker(event)) throw new Error('Cửa sổ chọn tài khoản không còn hoạt động');
+      return accountRegistry.list();
+    });
+    ipcMain.handle('account-create', (event, name, password) => {
+      if (!fromPicker(event)) return { success: false, error: 'Cửa sổ không hợp lệ' };
+      try {
+        const account = accountRegistry.create(name, password);
+        finish(account);
+        return { success: true };
+      } catch (error) { return { success: false, error: error.message }; }
+    });
+    ipcMain.handle('account-unlock', (event, id, password) => {
+      if (!fromPicker(event)) return { success: false, error: 'Cửa sổ không hợp lệ' };
+      const attempt = failures.get(id) || { count: 0, until: 0 };
+      if (Date.now() < attempt.until) return { success: false, error: 'Thử lại sau 30 giây' };
+      try {
+        const entry = accountRegistry.list().find(account => account.id === id);
+        if (!entry) throw new Error('Không tìm thấy tài khoản');
+        const account = entry.needsPassword
+          ? (password ? accountRegistry.setInitialPassword(id, password)
+            : accountRegistry.openWithoutPassword(id))
+          : accountRegistry.verify(id, password);
+        if (!account) {
+          attempt.count += 1;
+          if (attempt.count >= 5) { attempt.count = 0; attempt.until = Date.now() + 30000; }
+          failures.set(id, attempt);
+          throw new Error('Mật khẩu không đúng');
+        }
+        const record = accountRegistry.accounts.find(item => item.id === id);
+        accountRegistry.migrateLegacy(record);
+        failures.delete(id);
+        finish(account);
+        return { success: true };
+      } catch (error) { return { success: false, error: error.message }; }
+    });
+  });
+}
 
 // Ngăn ngừa crash do unhandled exceptions hoặc WebSocket network dropped
 process.on('uncaughtException', (err) => {
@@ -77,7 +143,9 @@ function createDashboardWindow() {
     console.log(`[Renderer Line ${line}] ${message}`);
   });
 
-  dashboardWindow.loadFile(path.join(__dirname, '../renderer/dashboard/index.html'));
+  dashboardWindow.loadFile(path.join(__dirname, '../renderer/dashboard/index.html'), {
+    query: { accountId: activeAccount.id, legacy: activeAccount.originLegacy ? '1' : '0' }
+  });
 
   dashboardWindow.once('ready-to-show', () => {
     showAndFocusDashboard();
@@ -182,8 +250,13 @@ function sendTestNotification(customText) {
 }
 
 app.whenReady().then(async () => {
+  accountRegistry = new AccountRegistry(app.getPath('userData'));
+  accountRegistry.refreshZaloNames(safeStorage);
+  activeAccount = await chooseAccount();
+  activeAccountDir = accountRegistry.dataDir(activeAccount.id);
+
   // 1. Tạo Bubble Window Manager và hiển thị bong bóng nổi
-  bubbleManager = new BubbleWindowManager();
+  bubbleManager = new BubbleWindowManager(activeAccountDir, activeAccount);
   bubbleManager.createWindow();
 
   // 2. Tạo Dashboard Window
@@ -191,13 +264,19 @@ app.whenReady().then(async () => {
 
   // 3. Tạo System Tray
   createTray();
+  if (pickerWindow && !pickerWindow.isDestroyed()) pickerWindow.destroy();
 
   // 4. Khởi tạo Zalo Manager
   zaloManager = new ZaloManager(
     (statusData) => {
+      if (statusData.status === 'connected' && statusData.user?.name) {
+        const updated = accountRegistry.setZaloName(activeAccount.id, statusData.user.name);
+        if (updated) activeAccount = updated;
+      }
       // Gửi cập nhật trạng thái Zalo đến Dashboard
       if (dashboardWindow && !dashboardWindow.isDestroyed()) {
         dashboardWindow.webContents.send('zalo-status-change', statusData);
+        dashboardWindow.webContents.send('account-name-updated', activeAccount.name);
       }
     },
     (message, isOld = false) => {
@@ -232,8 +311,18 @@ app.whenReady().then(async () => {
       if (bubbleManager && typeof bubbleManager.handleMessageReaction === 'function') {
         bubbleManager.handleMessageReaction(reactionData);
       }
-    }
+    },
+    (captionData) => {
+      if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+        dashboardWindow.webContents.send('zalo-photo-caption-updated', captionData);
+      }
+      if (bubbleManager?.window && !bubbleManager.window.isDestroyed()) {
+        bubbleManager.window.webContents.send('zalo-photo-caption-updated', captionData);
+      }
+    },
+    activeAccountDir
   );
+  zaloManager.requestStartupQuickSync();
 
   // Tự động kiểm tra phiên đăng nhập đã lưu
   setTimeout(async () => {
@@ -245,6 +334,22 @@ app.whenReady().then(async () => {
   }, 1500);
 
   // Cấu hình IPC Handlers
+  ipcMain.handle('account-current', () => activeAccount);
+  ipcMain.handle('account-change-password', (event, currentPassword, newPassword) => {
+    if (event.sender !== dashboardWindow?.webContents) return { success: false, error: 'Cửa sổ không hợp lệ' };
+    try {
+      const success = accountRegistry.changePassword(activeAccount.id, currentPassword, newPassword);
+      if (success) activeAccount = accountRegistry.list().find(item => item.id === activeAccount.id);
+      return success ? { success: true, requiresPassword: activeAccount.requiresPassword }
+        : { success: false, error: 'Mật khẩu hiện tại không đúng' };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+  ipcMain.handle('account-switch', event => {
+    if (event.sender !== dashboardWindow?.webContents) return { success: false };
+    setTimeout(() => { app.relaunch(); app.exit(0); }, 100);
+    return { success: true };
+  });
+
   ipcMain.handle('zalo-sync-old-messages', async () => {
     try {
       return await zaloManager.syncOldMessages();
@@ -263,13 +368,60 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('open-data-folder', () => {
-    const userData = app.getPath('userData');
+    const userData = activeAccountDir;
     shell.openPath(userData);
     return { success: true, path: userData };
   });
 
   ipcMain.handle('zalo-get-history-messages', () => {
     return zaloManager ? zaloManager.getHistoryMessages() : [];
+  });
+
+  ipcMain.handle('zalo-get-conversation-heads', () => {
+    return zaloManager ? zaloManager.getConversationHeads() : [];
+  });
+
+  ipcMain.handle('zalo-get-my-cloud-id', () => {
+    return zaloManager ? zaloManager.getMyCloudId() : '';
+  });
+
+  ipcMain.handle('zalo-fetch-cloud-messages', async (event, { cursor = '0', older = false } = {}) => {
+    if (!zaloManager) throw new Error('Chưa khởi tạo Zalo');
+    return zaloManager.fetchCloudMessages(cursor, older);
+  });
+
+  ipcMain.handle('zalo-get-bubble-startup', () => {
+    return zaloManager ? zaloManager.getBubbleStartupMessages() : [];
+  });
+
+  ipcMain.handle('zalo-get-thread-history', (event, { threadId, limit, offset }) => {
+    return zaloManager ? zaloManager.getThreadHistory(threadId, limit, offset) : [];
+  });
+
+  const linkPreviewCache = new Map();
+  ipcMain.handle('zalo-get-link-preview', async (event, value) => {
+    const url = safeHttpUrl(value);
+    if (!url) return null;
+    if (!linkPreviewCache.has(url)) {
+      const promise = fetchLinkPreview(url).catch(() => null);
+      linkPreviewCache.set(url, promise);
+      if (linkPreviewCache.size > 500) linkPreviewCache.delete(linkPreviewCache.keys().next().value);
+    }
+    return linkPreviewCache.get(url);
+  });
+  ipcMain.handle('zalo-open-external-link', async (event, value) => {
+    const url = safeHttpUrl(value);
+    if (!url) return false;
+    await shell.openExternal(url);
+    return true;
+  });
+
+  ipcMain.handle('zalo-resolve-group-senders', (event, { threadId, senderIds }) => {
+    return zaloManager ? zaloManager.resolveGroupSenderNames(threadId, senderIds) : [];
+  });
+
+  ipcMain.handle('zalo-search-history', (event, { query, limit, offset }) => {
+    return zaloManager ? zaloManager.searchHistoryMessages(query, limit, offset) : [];
   });
 
   ipcMain.handle('zalo-clear-history-messages', () => {
@@ -353,6 +505,10 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle('zalo-forward-text', async (event, { message, threadId, isGroup }) => {
+    return zaloManager.forwardTextMessage(message, threadId, isGroup);
+  });
+
   ipcMain.handle('zalo-send-sticker', async (event, { threadId, sticker, isGroup }) => {
     try {
       return await zaloManager.sendSticker(threadId, sticker, isGroup);
@@ -402,7 +558,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('zalo-get-pinned', async () => {
-    return zaloManager ? zaloManager.getPinnedThreads() : [];
+    return zaloManager ? await zaloManager.fetchPinnedThreads() : [];
   });
 
   ipcMain.handle('zalo-get-muted-threads', async () => {
@@ -420,7 +576,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('zalo-set-thread-mute', async (event, { threadId, isMuted, isGroup, duration }) => {
     try {
       const res = await zaloManager.setThreadMute(threadId, isMuted, isGroup, duration);
-      if (bubbleManager && typeof bubbleManager.onThreadMuteChanged === 'function') {
+      if (res.success && bubbleManager && typeof bubbleManager.onThreadMuteChanged === 'function') {
         bubbleManager.onThreadMuteChanged(threadId, isMuted);
       }
       return res;
@@ -443,6 +599,10 @@ app.whenReady().then(async () => {
     } catch (e) {
       return { success: false, error: e.message };
     }
+  });
+
+  ipcMain.handle('zalo-get-conversation-tools', async (event, { threadId, isGroup }) => {
+    return zaloManager.getConversationTools(threadId, isGroup);
   });
 
   ipcMain.handle('zalo-create-poll', async (event, { groupId, options }) => {
@@ -482,7 +642,7 @@ app.whenReady().then(async () => {
   // Lưu ảnh chụp màn hình từ Clipboard vào thư mục tạm thời để gửi đi
   ipcMain.handle('save-clipboard-image', async (event, base64Data) => {
     try {
-      const tempDir = path.join(app.getPath('userData'), 'temp_attachments');
+      const tempDir = path.join(activeAccountDir, 'temp_attachments');
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }

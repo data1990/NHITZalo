@@ -24,7 +24,24 @@ function zaloFetch(url, options = {}) {
     }
 
     const lib = parsedUrl.protocol === 'https:' ? https : http;
-    const reqHeaders = { ...(options.headers || {}) };
+    const reqHeaders = {};
+    if (options.headers) {
+      if (typeof options.headers.forEach === 'function') {
+        options.headers.forEach((val, key) => {
+          reqHeaders[key] = val;
+        });
+      } else if (typeof options.headers.entries === 'function' && typeof options.headers[Symbol.iterator] === 'function') {
+        for (const [key, val] of options.headers.entries()) {
+          reqHeaders[key] = val;
+        }
+      } else if (Array.isArray(options.headers)) {
+        for (const [key, val] of options.headers) {
+          reqHeaders[key] = val;
+        }
+      } else {
+        Object.assign(reqHeaders, options.headers);
+      }
+    }
 
     let sendBody = null;
     let isStream = false;
@@ -74,8 +91,9 @@ function zaloFetch(url, options = {}) {
     };
 
     const req = lib.request(reqOptions, (res) => {
-      // Xử lý chuyển hướng HTTP (301, 302, 307, 308)
-      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+      // Xử lý chuyển hướng HTTP (301, 302, 303, 307, 308)
+      // Nếu options.redirect === 'manual', trả về response chuyển hướng trực tiếp cho caller xử lý cookie và location
+      if (options.redirect !== 'manual' && [301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         const redirectUrl = new URL(res.headers.location, url).href;
         return zaloFetch(redirectUrl, {
           ...options,

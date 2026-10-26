@@ -505,8 +505,8 @@ body {
 /* Badge số tin chưa đọc */
 .chathead-unread-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: 0;
+  left: 0;
   background: #EF4444;
   color: white;
   font-size: 10px;
@@ -524,11 +524,41 @@ body {
   animation: bounce-in 0.25s ease-out;
 }
 
+.chathead-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 6;
+  width: 19px;
+  height: 19px;
+  padding: 3px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  background: #1e293b;
+  color: #fff;
+  cursor: pointer;
+  opacity: 0.9;
+}
+
+.chathead-close svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.chathead-close:hover { background: #dc2626; opacity: 1; }
+.chathead-close:focus-visible { outline: 2px solid #7cb8ff; outline-offset: 2px; }
+
 /* Các nút điều khiển góc phải */
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
   background: transparent !important;
 }
@@ -540,14 +570,13 @@ body {
 #btn-collapse {
   appearance: none !important;
   -webkit-appearance: none !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  border: none !important;
-  outline: none !important;
-  box-shadow: none !important;
-  color: #94A3B8;
-  width: 32px;
-  height: 32px;
+  background: #1e293b !important;
+  background-color: #1e293b !important;
+  border: 1.5px solid #71829d !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28) !important;
+  color: #f1f5f9;
+  width: 36px;
+  height: 36px;
   border-radius: 50% !important;
   display: flex;
   align-items: center;
@@ -561,10 +590,17 @@ body {
 #btn-sync-bubble:hover,
 #btn-dashboard:hover,
 #btn-collapse:hover {
-  background: rgba(255, 255, 255, 0.16) !important;
-  background-color: rgba(255, 255, 255, 0.16) !important;
+  background: #294775 !important;
+  background-color: #294775 !important;
+  border-color: #60a5fa !important;
   color: #FFFFFF;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2) !important;
   transform: translateY(-1px);
+}
+
+.header-actions button:focus-visible {
+  outline: 2px solid #93c5fd !important;
+  outline-offset: 2px !important;
 }
 
 .icon-btn:active,
@@ -719,6 +755,12 @@ body {
   gap: 7px;
 }
 
+.bubble-voice { display: flex; align-items: center; gap: 8px; max-width: 260px; }
+.bubble-voice > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bubble-voice strong { font-size: 12px; }
+.bubble-voice small { color: #CBD5E1; font-size: 10px; line-height: 1.3; }
+.bubble-voice audio { width: 215px; max-width: 100%; height: 34px; }
+
 .bubble-member-avatar {
   width: 28px;
   height: 28px;
@@ -775,6 +817,82 @@ body {
   line-height: 1.45;
   white-space: pre-wrap;
 }
+
+.bubble-text,
+.bubble-sender-title,
+.bubble-file-name {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.chat-bubble-row ::selection {
+  background: #7cb8ff;
+  color: #081322;
+}
+
+.bubble-reaction-action {
+  display: none;
+  position: absolute;
+  bottom: -14px;
+  right: -8px;
+  z-index: 20;
+}
+
+.chat-bubble-row:hover .bubble-reaction-action,
+.chat-bubble-row:focus-within .bubble-reaction-action { display: block; }
+
+.bubble-reaction-trigger,
+.bubble-reaction-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background: #1e293b;
+  cursor: pointer;
+}
+
+.bubble-reaction-trigger { width: 30px; height: 30px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); }
+.bubble-reaction-trigger img { width: 21px; height: 21px; pointer-events: none; }
+
+.bubble-reaction-picker {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  background: #17243a;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.bubble-reaction-picker { right: 0; }
+.bubble-reaction-action:hover .bubble-reaction-picker,
+.bubble-reaction-action:focus-within .bubble-reaction-picker { display: flex; }
+.bubble-reaction-pick { width: 30px; height: 30px; border-color: transparent; background: transparent; }
+.bubble-reaction-pick img { width: 24px; height: 24px; pointer-events: none; }
+.bubble-reaction-pick:hover { transform: translateY(-2px) scale(1.12); background: rgba(255, 255, 255, 0.12); }
+.bubble-reaction-trigger:focus-visible,
+.bubble-reaction-pick:focus-visible { outline: 2px solid #7cb8ff; outline-offset: 2px; }
+
+.bubble-copy-menu {
+  position: fixed;
+  z-index: 1000;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 8px 12px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.bubble-copy-menu:hover { background: #29405e; }
 
 .bubble-footer {
   display: flex;
@@ -836,6 +954,20 @@ body {
 
 .bubble-image:hover {
   transform: scale(1.02);
+}
+
+.bubble-photo-message {
+  max-width: 200px;
+}
+
+.bubble-photo-caption {
+  margin-top: 6px;
+  color: #f1f5f9;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .bubble-file-card {

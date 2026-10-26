@@ -6,7 +6,7 @@ const targetFiles = [
   path.join(__dirname, '../node_modules/zalo-api-final/dist/utils.js')
 ];
 
-const targetPattern = /const setCookieRaw = response\.headers\.get\("set-cookie"\);[\s\S]*?await ctx\.cookie\.setCookie\(parsed, origin\);[\s\S]*?logger\(ctx\)\.error\(error\);[\s\S]*?}[\s\S]*?}/;
+const targetPattern = /const setCookieRaw = response\.headers\.get\("set-cookie"\);[\s\S]*?await ctx\.cookie\.setCookie\(parsed, origin\);[\s\S]*?logger\(ctx\)\.error\(error\);[\s\S]*?}[\s\S]*?}[\s\S]*?}/;
 
 const replacementCode = `let rawCookies = [];
     if (typeof response.headers.getSetCookie === "function") {
@@ -14,7 +14,7 @@ const replacementCode = `let rawCookies = [];
     } else {
         const setCookieRaw = response.headers.get("set-cookie");
         if (setCookieRaw) {
-            rawCookies = setCookieRaw.split(/,\\s*(?=[a-zA-Z0-9_\\-]+=/);
+            rawCookies = setCookieRaw.split(/,\\s*(?=[a-zA-Z0-9_\\-]+=)/);
         }
     }
     if (rawCookies.length > 0 && !raw) {
@@ -40,7 +40,28 @@ let patchedCount = 0;
 for (const file of targetFiles) {
   if (fs.existsSync(file)) {
     let content = fs.readFileSync(file, 'utf8');
-    if (content.includes('cleanDomain = parsed.domain.replace')) {
+    let modified = false;
+
+    if (content.includes('(?=[a-zA-Z0-9_\\-]+=/')) {
+      content = content.replace('(?=[a-zA-Z0-9_\\-]+=/', '(?=[a-zA-Z0-9_\\-]+=)/');
+      modified = true;
+      console.log(`[Patch] Đã sửa lỗi regex cho: ${path.basename(file)}`);
+    }
+
+    if (content.includes('}\r\n    }\r\n    }\r\n    const redirectURL')) {
+      content = content.replace('}\r\n    }\r\n    }\r\n    const redirectURL', '}\r\n    }\r\n    const redirectURL');
+      modified = true;
+      console.log(`[Patch] Đã sửa lỗi thừa ngoặc nhọn cho: ${path.basename(file)}`);
+    } else if (content.includes('}\n    }\n    }\n    const redirectURL')) {
+      content = content.replace('}\n    }\n    }\n    const redirectURL', '}\n    }\n    const redirectURL');
+      modified = true;
+      console.log(`[Patch] Đã sửa lỗi thừa ngoặc nhọn cho: ${path.basename(file)}`);
+    }
+
+    if (modified) {
+      fs.writeFileSync(file, content, 'utf8');
+      patchedCount++;
+    } else if (content.includes('cleanDomain = parsed.domain.replace')) {
       console.log(`[Patch] File đã được vá: ${path.basename(file)}`);
       patchedCount++;
     } else if (targetPattern.test(content)) {
@@ -52,7 +73,8 @@ for (const file of targetFiles) {
   }
 }
 
-// Vá thêm bắt sự kiện syncmsgmb và transfer_sync2 trong listen.cjs và listen.js
+// Vá thêm bắt đầy đủ sự kiện đồng bộ tin nhắn (syncmsgmb, transfer_sync2, transfer_msg, transfer_status, upload_batch)
+// và bổ sung method requestMobileWakeUp vào Listener
 const listenFiles = [
   path.join(__dirname, '../node_modules/zalo-api-final/dist/cjs/apis/listen.cjs'),
   path.join(__dirname, '../node_modules/zalo-api-final/dist/apis/listen.js')
@@ -61,14 +83,27 @@ const listenFiles = [
 for (const file of listenFiles) {
   if (fs.existsSync(file)) {
     let content = fs.readFileSync(file, 'utf8');
-    if (!content.includes('sync_event')) {
+
+    if (!content.includes('transfer_msg')) {
       const frPattern = 'this.emit("friend_event", friendEvent);\n                        }';
       const frPatternCRLF = 'this.emit("friend_event", friendEvent);\r\n                        }';
       const syncBlock = `
-                        else if (control.content.act_type == "syncmsgmb" || control.content.act_type == "transfer_sync2") {
+                        else if (
+                            control.content.act_type == "syncmsgmb" ||
+                            control.content.act_type == "transfer_sync2" ||
+                            control.content.act_type == "transfer_msg" ||
+                            control.content.act == "transfer_status" ||
+                            control.content.act == "upload_batch" ||
+                            control.content.act == "transfer_after_login" ||
+                            control.content.act == "syncmsg_info" ||
+                            control.content.act == "user_confirm"
+                        ) {
                             let syncData = control.content.data;
                             try {
                                 if (typeof syncData == "string") syncData = JSON.parse(syncData);
+                                if (syncData && typeof syncData.data == "string") {
+                                    try { syncData.data = JSON.parse(syncData.data); } catch (_) {}
+                                }
                             } catch (e) {}
                             this.emit("sync_event", {
                                 type: control.content.act,
@@ -80,16 +115,31 @@ for (const file of listenFiles) {
 
       if (content.includes(frPattern)) {
         content = content.replace(frPattern, frPattern + syncBlock);
-        fs.writeFileSync(file, content, 'utf8');
-        console.log(`[Patch] Đã vá sync_event thành công: ${path.basename(file)}`);
       } else if (content.includes(frPatternCRLF)) {
         content = content.replace(frPatternCRLF, frPatternCRLF + syncBlock);
-        fs.writeFileSync(file, content, 'utf8');
-        console.log(`[Patch] Đã vá sync_event thành công: ${path.basename(file)}`);
       }
-    } else {
-      console.log(`[Patch] File đã có sync_event: ${path.basename(file)}`);
     }
+
+    // Bổ sung method requestMobileWakeUp vào Listener nếu chưa có
+    if (!content.includes('requestMobileWakeUp')) {
+      const targetMethod = 'requestOldReactions(threadType, lastMsgId = null) {';
+      const wakeUpMethod = `requestMobileWakeUp(syncId = "") {
+        const payload = {
+            version: 1,
+            cmd: 592,
+            subCmd: 0,
+            data: { syncId, toDevice: 0 },
+        };
+        this.sendWs(payload, false);
+    }
+    `;
+      if (content.includes(targetMethod)) {
+        content = content.replace(targetMethod, wakeUpMethod + targetMethod);
+      }
+    }
+
+    fs.writeFileSync(file, content, 'utf8');
+    console.log(`[Patch] File đã có/vá đồng bộ Sync V2 & Mobile Wake Up: ${path.basename(file)}`);
   }
 }
 
@@ -181,6 +231,26 @@ for (const file of reactionFiles) {
       console.log(`[Patch] Đã vá addReaction cho: ${path.basename(file)}`);
     } else {
       console.log(`[Patch] File đã có ZALO_PC_ICONS: ${path.basename(file)}`);
+    }
+  }
+}
+
+// Vá loginQR để hiển thị chi tiết phản hồi khi không đăng nhập được
+const loginQRFiles = [
+  path.join(__dirname, '../node_modules/zalo-api-final/dist/cjs/apis/loginQR.cjs'),
+  path.join(__dirname, '../node_modules/zalo-api-final/dist/apis/loginQR.js')
+];
+
+for (const file of loginQRFiles) {
+  if (fs.existsSync(file)) {
+    let content = fs.readFileSync(file, 'utf8');
+    if (content.includes('return reject(new ZaloApiError.ZaloApiError("Can\'t login"));')) {
+      content = content.replace(
+        'return reject(new ZaloApiError.ZaloApiError("Can\'t login"));',
+        'return reject(new ZaloApiError.ZaloApiError("Can\'t login: " + JSON.stringify(userInfo)));'
+      );
+      fs.writeFileSync(file, content, 'utf8');
+      console.log(`[Patch] Đã vá thông báo lỗi chi tiết cho loginQR: ${path.basename(file)}`);
     }
   }
 }

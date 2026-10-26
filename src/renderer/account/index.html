@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Chọn tài khoản Zalo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="heading">
+      <img src="../../assets/logo.png" alt="" width="48" height="48">
+      <div><h1>Chọn tài khoản</h1><p>Mở tin nhắn và danh bạ của tài khoản bạn muốn dùng</p></div>
+    </header>
+    <div id="account-list" class="account-list" aria-label="Tài khoản đã lưu"></div>
+    <section id="unlock-panel" class="panel" hidden>
+      <h2 id="unlock-title">Mở khóa</h2>
+      <p id="unlock-hint"></p>
+      <div id="legacy-choice-actions" class="choice-actions" hidden>
+        <button id="btn-skip-password" type="button" class="primary">Bỏ qua mật khẩu và mở</button>
+        <button id="btn-set-password" type="button" class="secondary">Đặt mật khẩu</button>
+      </div>
+      <form id="unlock-form">
+        <div id="unlock-password-wrap">
+          <label for="unlock-password">Mật khẩu tài khoản</label>
+          <input id="unlock-password" type="password" minlength="6" autocomplete="current-password">
+        </div>
+        <div id="initial-confirm-wrap" hidden>
+          <label for="initial-confirm">Nhập lại mật khẩu mới</label>
+          <input id="initial-confirm" type="password" minlength="6" autocomplete="new-password">
+        </div>
+        <button type="submit" class="primary">Mở tài khoản</button>
+        <button id="btn-cancel-password" type="button" class="secondary" hidden>Quay lại lựa chọn</button>
+      </form>
+    </section>
+    <section id="create-panel" class="panel" hidden>
+      <h2>Thêm tài khoản Zalo</h2>
+      <p>Sau khi tạo, quét mã QR Zalo trong bảng điều khiển để đăng nhập.</p>
+      <form id="create-form">
+        <label for="account-name">Tên để nhận biết</label>
+        <input id="account-name" maxlength="80" autocomplete="off" required placeholder="Ví dụ: Zalo công việc">
+        <label for="create-password">Mật khẩu mở tài khoản (không bắt buộc)</label>
+        <input id="create-password" type="password" minlength="6" autocomplete="new-password" placeholder="Để trống nếu không muốn đặt mật khẩu">
+        <label for="confirm-password">Nhập lại mật khẩu (nếu đã đặt)</label>
+        <input id="confirm-password" type="password" minlength="6" autocomplete="new-password">
+        <button type="submit" class="primary">Tạo và mở tài khoản</button>
+      </form>
+    </section>
+    <p id="form-error" class="error" role="alert" aria-live="polite"></p>
+    <button id="show-create" type="button" class="add">＋ Thêm tài khoản mới</button>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

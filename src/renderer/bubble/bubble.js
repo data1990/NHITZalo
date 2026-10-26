@@ -89,6 +89,10 @@ function formatBubbleFileSize(bytes) {
 // ==========================================
 // Map: threadId -> { threadId, senderName, avatar, isGroup, isMuted, unreadCount, lastTime, messages: [] }
 const threadsMap = new Map();
+const accountParams = new URLSearchParams(window.location.search);
+const accountStorage = createAccountStorage(window.localStorage,
+  accountParams.get('accountId'), accountParams.get('legacy') === '1');
+const threadVisibility = createBubbleThreadVisibility(accountStorage);
 let activeThreadId = null;
 let isBubbleExpanded = false;
 
@@ -108,6 +112,8 @@ const cardSenderName = document.getElementById('card-sender-name');
 const cardSenderType = document.getElementById('card-sender-type');
 const threadStatusText = document.getElementById('thread-status-text');
 const messagesList = document.getElementById('messages-list');
+const bubbleCopyMenu = document.getElementById('bubble-copy-menu');
+let bubbleCopyText = '';
 const emptyState = document.getElementById('empty-state');
 const replyInput = document.getElementById('reply-input');
 const btnSendReply = document.getElementById('btn-send-reply');
@@ -138,6 +144,7 @@ const previewCloseBtn = document.getElementById('preview-close-btn');
 function getMessageSnippet(msg) {
   if (!msg) return 'Tin nhắn mới';
   if (msg.isUndo || msg.isRevoked || msg.isRecalled) return '🚫 Tin nhắn đã được thu hồi';
+  if (window.VoiceMessage.getVoicePresentation(msg).isVoice) return '🎤 [Tin nhắn thoại]';
   if (msg.isPhoto) return '📷 [Hình ảnh]';
   if (msg.isVideo) return '🎥 [Video]';
   if (msg.isSticker) return '✨ [Nhãn dán Sticker]';
@@ -405,10 +412,12 @@ if (btnSyncBubble) {
       threadStatusText.textContent = 'Đang đồng bộ...';
       if (window.electronAPI && window.electronAPI.syncOldMessages) {
         const res = await window.electronAPI.syncOldMessages();
-        if (res && res.success) {
-          threadStatusText.textContent = res.count > 0 ? `+${res.count} tin mới` : 'Đã cập nhật';
+        if (res?.requestAccepted) {
+          threadStatusText.textContent = 'Đang chờ điện thoại phản hồi';
+        } else if (res && res.success && res.completed) {
+          threadStatusText.textContent = res.added > 0 ? `+${res.added} tin mới` : 'Đã cập nhật';
         } else {
-          threadStatusText.textContent = 'Đồng bộ thất bại';
+          threadStatusText.textContent = res?.error || 'Đồng bộ chưa hoàn tất';
         }
       }
     } catch (e) {
@@ -531,7 +540,7 @@ function processIncomingMessage(msg, isNew = false) {
   }
 
   // Nếu chưa có activeThreadId thì gán thread này làm active
-  if (!activeThreadId) {
+  if (!activeThreadId && !threadVisibility.isClosed(tId)) {
     activeThreadId = tId;
   }
 
@@ -541,7 +550,7 @@ function processIncomingMessage(msg, isNew = false) {
 // Cập nhật tổng số badge chưa đọc
 function updateTotalUnreadBadge() {
   let total = 0;
-  for (const t of threadsMap.values()) {
+  for (const t of threadVisibility.visible([...threadsMap.values()])) {
     total += (t.unreadCount || 0);
   }
 
@@ -561,7 +570,7 @@ function updateTotalUnreadBadge() {
 function renderChatHeads() {
   chatheadsTrack.innerHTML = '';
 
-  const threadsArray = Array.from(threadsMap.values());
+  const threadsArray = threadVisibility.visible([...threadsMap.values()]);
   // Sắp xếp các thread: người có tin nhắn gần nhất lên đầu
   threadsArray.sort((a, b) => (b.lastTime || 0) - (a.lastTime || 0));
 
@@ -607,7 +616,15 @@ function renderChatHeads() {
       </div>
       ${groupDotHTML}
       ${unreadHTML}
+      <button type="button" class="chathead-close" title="Đóng ${escapeHTML(thread.senderName || 'hội thoại')}" aria-label="Đóng ${escapeHTML(thread.senderName || 'hội thoại')}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
     `;
+
+    head.querySelector('.chathead-close').addEventListener('click', event => {
+      event.stopPropagation();
+      closeChatHead(thread.threadId);
+    });
 
     // Click vào icon người nhắn tin để chuyển hội thoại
     head.addEventListener('click', () => {
@@ -618,9 +635,37 @@ function renderChatHeads() {
   });
 }
 
+function closeChatHead(threadId) {
+  const thread = threadsMap.get(threadId);
+  if (!thread) return;
+  threadVisibility.close(threadId);
+  thread.unreadCount = 0;
+
+  if (activeThreadId === threadId) {
+    const remaining = threadVisibility.visible([...threadsMap.values()])
+      .sort((a, b) => (b.lastTime || 0) - (a.lastTime || 0));
+    if (remaining.length) {
+      switchActiveThread(remaining[0].threadId);
+      updateCollapsedHeadAvatar(remaining[0]);
+    } else {
+      activeThreadId = null;
+      cardSenderName.textContent = 'Bong bóng Zalo';
+      cardSenderType.textContent = 'Chờ tin nhắn mới';
+      threadStatusText.textContent = '';
+      replyInput.placeholder = 'Chờ tin nhắn mới...';
+      messagesList.innerHTML = '';
+      emptyState.style.display = 'flex';
+      resetCollapsedHeadAvatar();
+    }
+  }
+
+  updateTotalUnreadBadge();
+  renderChatHeads();
+}
+
 // Chuyển sang hội thoại của người được chọn
 function switchActiveThread(threadId, markAsRead = null) {
-  if (!threadsMap.has(threadId)) return;
+  if (!threadsMap.has(threadId) || threadVisibility.isClosed(threadId)) return;
   activeThreadId = threadId;
 
   const thread = threadsMap.get(threadId);
@@ -651,8 +696,9 @@ function switchActiveThread(threadId, markAsRead = null) {
   renderConversationMessages(thread.messages || []);
 
   // Nếu tin nhắn trong thread ít hơn 10 tin, gọi lấy thêm lịch sử chi tiết
-  if (thread.messages.length < 10 && window.electronAPI && window.electronAPI.fetchThreadMessages) {
-    window.electronAPI.fetchThreadMessages(thread.threadId, thread.isGroup)
+  if (thread.messages.length < 50 && window.electronAPI?.getThreadHistory) {
+    window.electronAPI.getThreadHistory(thread.threadId, 50, 0)
+      .then(local => local?.length ? local : window.electronAPI.fetchThreadMessages(thread.threadId, thread.isGroup))
       .then(fetchedMsgs => {
         if (Array.isArray(fetchedMsgs) && fetchedMsgs.length > 0) {
           fetchedMsgs.forEach(m => processIncomingMessage(m, false));
@@ -703,14 +749,25 @@ function renderConversationMessages(msgList) {
     );
 
     let contentHTML = '';
+    const voice = !isRevokedMsg ? window.VoiceMessage.getVoicePresentation(msg) : { isVoice: false };
     if (isRevokedMsg) {
       contentHTML = `<span style="font-style: italic; color: #94A3B8; display: inline-flex; align-items: center; gap: 4px;">🚫 Tin nhắn đã được thu hồi</span>`;
+    } else if (voice.isVoice) {
+      contentHTML = `<div class="bubble-voice">
+        <span aria-hidden="true">🎤</span>
+        <div><strong>Tin nhắn thoại${voice.duration ? ` • ${escapeHTML(voice.duration)}` : ''}</strong>
+          ${voice.url ? `<audio controls preload="none" src="${escapeHTML(voice.url)}" aria-label="Phát tin nhắn thoại"></audio>`
+            : '<small>Chưa có tệp âm thanh trong lịch sử đã đồng bộ</small>'}
+        </div>
+      </div>`;
     } else if (msg.isSticker || msg.stickerUrl) {
       const sUrl = msg.stickerUrl || 'https://api.zaloapp.com/api/emoticon/sticker/webpc?eid=16715&size=130';
       contentHTML = `<img src="${escapeHTML(sUrl)}" class="bubble-sticker" alt="Sticker">`;
     } else if (msg.isPhoto || (typeof msg.content === 'string' && (msg.content.match(/^https?:\/\/[^\s]+(\.(jpg|jpeg|png|webp|gif)|\/jpg\/|\/png\/)/i) || msg.content.includes('.zdn.vn/')))) {
       const pUrl = msg.photoUrl || msg.thumbUrl || msg.content;
-      contentHTML = `<img src="${escapeHTML(pUrl)}" class="bubble-image" alt="Ảnh">`;
+      const photoCaption = window.PhotoCaption.getPhotoCaption(msg);
+      contentHTML = `<div class="bubble-photo-message"><img src="${escapeHTML(pUrl)}" class="bubble-image" alt="Ảnh">
+        ${photoCaption ? `<div class="bubble-photo-caption">${escapeHTML(photoCaption)}</div>` : ''}</div>`;
     } else if (msg.isFile || msg.fileName || (typeof msg.content === 'string' && (msg.content.startsWith('[Tài liệu:') || msg.content.match(/\.(zip|rar|7z|docx?|xlsx?|pdf|pptx?)$/i)))) {
       let fName = msg.fileName || '';
       if (!fName || fName === 'Tài liệu Zalo' || fName === 'Tệp tin Zalo' || !fName.includes('.')) {
@@ -829,9 +886,49 @@ function renderConversationMessages(msgList) {
           <div class="bubble-footer">
             <span class="bubble-time">${timeStr}</span>
           </div>
+          ${!isRevokedMsg ? `
+            <div class="bubble-reaction-action">
+              <button type="button" class="bubble-reaction-trigger" title="Bấm để thả Tim, rê chuột để chọn cảm xúc" aria-label="Thả Tim hoặc chọn cảm xúc">
+                <img src="../assets/zalo-icons/Heart_24_emoji.svg" alt="">
+              </button>
+              <div class="bubble-reaction-picker" aria-label="Chọn cảm xúc">
+                <button type="button" class="bubble-reaction-pick" data-emoji="❤️" title="Tim"><img src="../assets/zalo-icons/Heart_24_emoji.svg" alt="Tim"></button>
+                <button type="button" class="bubble-reaction-pick" data-emoji="👍" title="Thích"><img src="../assets/zalo-icons/Like_24_emoji.svg" alt="Thích"></button>
+                <button type="button" class="bubble-reaction-pick" data-emoji="😂" title="Haha"><img src="../assets/zalo-icons/Smile_24_emoji.svg" alt="Haha"></button>
+                <button type="button" class="bubble-reaction-pick" data-emoji="😮" title="Wow"><img src="../assets/zalo-icons/Surprised_24_emoji.svg" alt="Wow"></button>
+                <button type="button" class="bubble-reaction-pick" data-emoji="😢" title="Buồn"><img src="../assets/zalo-icons/Cry_24_emoji.svg" alt="Buồn"></button>
+                <button type="button" class="bubble-reaction-pick" data-emoji="😡" title="Phẫn nộ"><img src="../assets/zalo-icons/Rage_24_emoji.svg" alt="Phẫn nộ"></button>
+              </div>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
+
+    const sendReaction = async (emoji, button) => {
+      if (!window.electronAPI?.sendReaction || button.disabled) return;
+      button.disabled = true;
+      try {
+        const result = await window.electronAPI.sendReaction(activeThread.threadId, msg.id, msg.cliMsgId, emoji, activeThread.isGroup);
+        if (!result?.success) throw new Error(result?.error || 'Zalo từ chối thả cảm xúc');
+      } catch (error) {
+        alert('Không thể thả cảm xúc: ' + error.message);
+      } finally {
+        button.disabled = false;
+      }
+    };
+
+    const reactionTrigger = row.querySelector('.bubble-reaction-trigger');
+    reactionTrigger?.addEventListener('click', event => {
+      event.stopPropagation();
+      sendReaction('❤️', reactionTrigger);
+    });
+    row.querySelectorAll('.bubble-reaction-pick').forEach(button => {
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        sendReaction(button.dataset.emoji, button);
+      });
+    });
 
     messagesList.appendChild(row);
   });
@@ -851,9 +948,9 @@ function escapeHTML(str) {
 // 6. KHỞI TẠO & LẮNG NGHE SỰ KIỆN TỪ MAIN PROCESS
 // ==========================================
 window.addEventListener('DOMContentLoaded', async () => {
-  if (window.electronAPI && window.electronAPI.getHistoryMessages) {
+  if (window.electronAPI && window.electronAPI.getBubbleStartupMessages) {
     try {
-      const savedMessages = await window.electronAPI.getHistoryMessages();
+      const savedMessages = await window.electronAPI.getBubbleStartupMessages();
       if (Array.isArray(savedMessages) && savedMessages.length > 0) {
         // Chỉ nạp các tin nhắn của hội thoại BẬT THÔNG BÁO (!m.isMuted)
         const unmutedMsgs = savedMessages.filter(m => !m.isMuted);
@@ -893,7 +990,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         }
 
         // Chọn thread có tin nhắn mới nhất
-        const threadsArray = Array.from(threadsMap.values());
+        const threadsArray = threadVisibility.visible([...threadsMap.values()]);
         if (threadsArray.length > 0) {
           threadsArray.sort((a, b) => (b.lastTime || 0) - (a.lastTime || 0));
           switchActiveThread(threadsArray[0].threadId, false);
@@ -917,6 +1014,15 @@ if (window.electronAPI && window.electronAPI.onBubbleMessage) {
     // CHỈ CÓ TIN NHẮN NÀO BẬT THÔNG BÁO MỚI HIỆN LÊN BONG BÓNG:
     if (message && message.isMuted) return;
 
+    const hadActiveThread = Boolean(activeThreadId);
+    const msgThreadId = message
+      ? String(message.threadId || message.senderId || (message.isGroup ? message.groupId : 'unknown'))
+      : '';
+    if (message) threadVisibility.reopenForMessage(msgThreadId, { isOld, isSelf: message.isSelf });
+
+    // Xử lý tin mới trước danh sách lịch sử để số chưa đọc không bị mất vì trùng ID.
+    if (message) processIncomingMessage(message, !isOld);
+
     if (Array.isArray(allMessages)) {
       allMessages.filter(m => !m.isMuted).forEach(m => processIncomingMessage(m, false));
     }
@@ -927,11 +1033,7 @@ if (window.electronAPI && window.electronAPI.onBubbleMessage) {
         collapsedHead.classList.add('pulsing');
       }
 
-      processIncomingMessage(message, !isOld);
-
-      const msgThreadId = String(message.threadId || message.senderId || (message.isGroup ? message.groupId : 'unknown'));
-
-      if (!isBubbleExpanded) {
+      if (!isBubbleExpanded && !threadVisibility.isClosed(msgThreadId)) {
         // Khi cửa sổ chat đang thu gọn/ẩn: Tự động chuyển activeThread sang người vừa gửi tin mới
         // (chưa xóa unreadCount vì người dùng chưa mở cửa sổ xem chi tiết)
         switchActiveThread(msgThreadId, false);
@@ -943,8 +1045,8 @@ if (window.electronAPI && window.electronAPI.onBubbleMessage) {
         if (!isOld && !message.isSelf) {
           showBubblePreview(message);
         }
-      } else {
-        if (!activeThreadId) {
+      } else if (!threadVisibility.isClosed(msgThreadId)) {
+        if (!hadActiveThread) {
           switchActiveThread(msgThreadId);
         } else if (activeThreadId === msgThreadId) {
           const thread = threadsMap.get(activeThreadId);
@@ -971,7 +1073,7 @@ if (window.electronAPI && window.electronAPI.onThreadMuteChanged) {
       threadsMap.delete('g_' + sId);
 
       if (activeThreadId === sId || activeThreadId === sId.replace(/^g_/, '') || activeThreadId === ('g_' + sId)) {
-        const remaining = Array.from(threadsMap.values());
+        const remaining = threadVisibility.visible([...threadsMap.values()]);
         if (remaining.length > 0) {
           switchActiveThread(remaining[0].threadId);
         } else {
@@ -991,6 +1093,22 @@ if (window.electronAPI && window.electronAPI.onThreadMuteChanged) {
 }
 
 // Lắng nghe sự kiện thu hồi tin nhắn
+if (window.electronAPI?.onPhotoCaptionUpdated) {
+  window.electronAPI.onPhotoCaptionUpdated(({ threadId, msgId, photoCaption }) => {
+    const thread = threadsMap.get(String(threadId));
+    if (!thread) return;
+    let changed = false;
+    for (const message of thread.messages) {
+      if (String(message.id) !== String(msgId)) continue;
+      message.photoCaption = photoCaption;
+      changed = true;
+    }
+    if (changed && String(activeThreadId) === String(threadId)) {
+      renderConversationMessages(thread.messages);
+    }
+  });
+}
+
 if (window.electronAPI && window.electronAPI.onMessageUndo) {
   window.electronAPI.onMessageUndo((undoData) => {
     try {
@@ -1170,6 +1288,48 @@ messagesList.addEventListener('click', async (e) => {
       }
     }
   }
+});
+
+messagesList.addEventListener('contextmenu', event => {
+  const row = event.target.closest('.chat-bubble-row');
+  if (!row) return;
+  const selection = window.getSelection();
+  const selectedText = selection && row.contains(selection.anchorNode) && row.contains(selection.focusNode)
+    ? selection.toString() : '';
+  const fullText = row.querySelector('.bubble-text')?.textContent || '';
+  bubbleCopyText = selectedText || fullText;
+  if (!bubbleCopyText || !bubbleCopyMenu) return;
+  event.preventDefault();
+  bubbleCopyMenu.textContent = selectedText ? 'Sao chép đoạn đã chọn' : 'Sao chép tin nhắn';
+  bubbleCopyMenu.classList.remove('hidden');
+  const menuWidth = bubbleCopyMenu.offsetWidth;
+  const menuHeight = bubbleCopyMenu.offsetHeight;
+  bubbleCopyMenu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8))}px`;
+  bubbleCopyMenu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8))}px`;
+});
+
+function hideBubbleCopyMenu() {
+  bubbleCopyMenu?.classList.add('hidden');
+}
+
+bubbleCopyMenu?.addEventListener('click', async event => {
+  event.stopPropagation();
+  const text = bubbleCopyText;
+  hideBubbleCopyMenu();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (error) {
+    alert('Không thể sao chép văn bản: ' + error.message);
+  }
+});
+
+document.addEventListener('click', event => {
+  if (!bubbleCopyMenu?.contains(event.target)) hideBubbleCopyMenu();
+});
+messagesList.addEventListener('scroll', hideBubbleCopyMenu, { passive: true });
+window.addEventListener('keydown', event => {
+  if (event.key === 'Escape') hideBubbleCopyMenu();
 });
 
 // Lắng nghe sự kiện hội thoại đã được đọc (đồng bộ từ Dashboard hoặc Bubble)

@@ -4,13 +4,14 @@ const fs = require('fs');
 const { app } = require('electron');
 
 class BubbleWindowManager {
-  constructor() {
+  constructor(accountDataDir, account) {
     this.window = null;
     this.isExpanded = false;
     this.collapsedSize = { width: 84, height: 84 };
     this.expandedSize = { width: 440, height: 530 };
     this.previewSize = { width: 384, height: 92 };
-    this.positionConfigPath = path.join(app.getPath('userData'), 'bubble_pos.json');
+    this.positionConfigPath = path.join(accountDataDir || app.getPath('userData'), 'bubble_pos.json');
+    this.account = account || null;
     this.position = this.loadPosition();
     this.unreadMessages = [];
     this.isPreviewing = false;
@@ -73,7 +74,9 @@ class BubbleWindowManager {
     // Luôn nổi trên mọi app khác
     this.window.setAlwaysOnTop(true, 'screen-saver');
 
-    this.window.loadFile(path.join(__dirname, '../renderer/bubble/index.html'));
+    this.window.loadFile(path.join(__dirname, '../renderer/bubble/index.html'), {
+      query: { accountId: this.account?.id || '', legacy: this.account?.originLegacy ? '1' : '0' }
+    });
 
     this.window.once('ready-to-show', () => {
       if (this.window) {

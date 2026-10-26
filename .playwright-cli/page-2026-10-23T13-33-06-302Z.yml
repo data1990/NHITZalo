@@ -1,0 +1,41 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - img "NHIT Zalo" [ref=e6]
+      - generic [ref=e7]: NgocHoangIT - Zalo Bubble Notifier
+      - generic [ref=e8]: PRO
+    - generic [ref=e9]:
+      - button "Thu nhỏ" [ref=e10] [cursor=pointer]
+      - button "Đóng bảng điều khiển" [ref=e12] [cursor=pointer]
+  - generic [ref=e16]:
+    - complementary [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]: Chưa kết nối
+        - paragraph [ref=e22]: Cần đăng nhập tài khoản Zalo
+      - navigation [ref=e23]:
+        - button "Tài khoản Zalo" [ref=e24] [cursor=pointer]
+        - button "Tin nhắn Zalo" [ref=e29] [cursor=pointer]
+        - button "Danh bạ & Nhóm" [active] [ref=e34] [cursor=pointer]
+        - button "Cài đặt Bong bóng" [ref=e39] [cursor=pointer]
+      - generic [ref=e44]:
+        - button "Thử tin nhắn mẫu" [ref=e45] [cursor=pointer]
+        - generic [ref=e49]:
+          - img "Ngọc Hoàng IT" [ref=e50]
+          - generic [ref=e51]:
+            - generic [ref=e52]: Ngọc Hoàng IT
+            - generic [ref=e53]: Zalo Bubble Solution
+    - main [ref=e54]:
+      - generic [ref=e91]:
+        - generic [ref=e92]:
+          - generic [ref=e93]:
+            - heading "Danh bạ & Nhóm" [level=2] [ref=e94]
+            - paragraph [ref=e95]: Xem bạn bè, nhóm và mở hội thoại nhanh
+          - button "Làm mới" [ref=e96] [cursor=pointer]
+        - generic [ref=e97]:
+          - generic [ref=e98]: Tìm trong danh bạ
+          - searchbox "Tìm trong danh bạ" [ref=e99]
+          - group "Lọc danh bạ" [ref=e100]:
+            - button "Tất cả" [ref=e101] [cursor=pointer]
+            - button "Bạn bè" [ref=e102] [cursor=pointer]
+            - button "Nhóm" [ref=e103] [cursor=pointer]
+        - status [ref=e104]: Danh bạ trống. Hãy kết nối Zalo hoặc bấm Làm mới.

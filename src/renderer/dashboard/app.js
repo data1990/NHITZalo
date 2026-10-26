@@ -4,6 +4,35 @@
 let currentTab = 'tab-login';
 let unreadMessageCount = 0;
 let messagesHistory = [];
+let myCloudId = '';
+const cloudOlderCursor = new Map();
+let cloudRecentRefreshAt = 0;
+let cloudRecentRefreshPromise = null;
+
+function refreshCloudRecent() {
+  if (!myCloudId || !window.electronAPI?.fetchCloudMessages || cloudRecentRefreshPromise ||
+      Date.now() - cloudRecentRefreshAt < 15 * 60_000) return;
+  cloudRecentRefreshAt = Date.now();
+  cloudRecentRefreshPromise = window.electronAPI.fetchCloudMessages()
+    .then(result => {
+      for (const message of result.messages || []) addMessageToDashboard(message, true);
+      if (result.messages?.length) renderDashboardFeed();
+    })
+    .catch(error => {
+      console.warn('Không làm mới được Cloud của tôi:', error.message);
+    })
+    .finally(() => { cloudRecentRefreshPromise = null; });
+}
+
+async function loadMyCloudId() {
+  if (!window.electronAPI?.getMyCloudId) return;
+  const id = String(await window.electronAPI.getMyCloudId() || '');
+  if (id && id !== myCloudId) {
+    myCloudId = id;
+    threadHistoryLoaded.clear();
+    renderDashboardFeed();
+  }
+}
 
 // DOM Elements
 const navItems = document.querySelectorAll('.nav-item');
@@ -65,6 +94,8 @@ navItems.forEach(item => {
     if (targetTab === 'tab-messages') {
       unreadMessageCount = 0;
       tabUnreadBadge.classList.add('hidden');
+    } else {
+      updateDashboardTabUnread();
     }
   });
 });
@@ -168,6 +199,9 @@ if (window.electronAPI && window.electronAPI.onZaloStatus) {
       updateConnectionUI('connected', 'Đã kết nối', 'Đang lắng nghe tin nhắn Zalo', data.user);
       // Tự động tải danh sách nhóm Zalo khi vừa kết nối
       loadGroupsData();
+      loadMyCloudId().catch(error => console.warn('Không tải được ID Cloud:', error.message));
+    } else if (data.status === 'connecting') {
+      updateConnectionUI('connecting', 'Đang kết nối', data.message || 'Đang kết nối tin nhắn Zalo');
     } else if (data.status === 'disconnected') {
       updateConnectionUI('disconnected', 'Chưa kết nối', data.message || 'Cần đăng nhập Zalo');
     } else if (data.status === 'qr_expired') {
@@ -179,13 +213,7 @@ if (window.electronAPI && window.electronAPI.onZaloStatus) {
     } else if (data.status === 'phone_sync_confirmed') {
       showToast(data.message || '📱 Điện thoại đã xác nhận đồng bộ! Đang tải tin nhắn...', 'info');
       setTimeout(async () => {
-        if (window.electronAPI && window.electronAPI.getHistoryMessages) {
-          const latest = await window.electronAPI.getHistoryMessages();
-          if (Array.isArray(latest) && latest.length > 0) {
-            latest.forEach(m => addMessageToDashboard(m, true));
-            renderDashboardFeed();
-          }
-        }
+        await refreshConversationHeads();
       }, 1200);
     } else if (data.status === 'error') {
       qrLoading.classList.add('hidden');
@@ -240,50 +268,97 @@ function showToast(message, type = 'info') {
 
 // Kiểm tra phiên đăng nhập đã lưu và nạp lịch sử tin nhắn
 window.addEventListener('DOMContentLoaded', async () => {
+  const localAccount = await window.electronAPI.getCurrentAccount?.();
+  const localAccountName = document.getElementById('local-account-name');
+  if (localAccountName && localAccount) localAccountName.textContent = localAccount.name;
+  const localAccountSummary = document.getElementById('local-account-summary');
+  if (localAccountSummary && localAccount) localAccountSummary.textContent = localAccount.name;
+  const localAccountAvatar = document.querySelector('.local-account-avatar');
+  if (localAccountAvatar && localAccount?.name) localAccountAvatar.textContent = localAccount.name[0].toUpperCase();
+  updateLocalPasswordUI(localAccount);
   // 1. Kiểm tra session Zalo
   if (window.electronAPI && window.electronAPI.checkSavedSession) {
     const res = await window.electronAPI.checkSavedSession();
     if (res && res.hasSession) {
-      updateConnectionUI('connecting', 'Đang kết nối lại...', 'Tự động đăng nhập từ phiên đã lưu');
+      if (res.currentUser) {
+        updateConnectionUI('connected', 'Đã kết nối', 'Đang lắng nghe tin nhắn Zalo', res.currentUser);
+      } else {
+        updateConnectionUI('connecting', 'Đang kết nối lại...', 'Tự động đăng nhập từ phiên đã lưu');
+      }
     }
   }
 
   // 2. Nạp danh bạ bạn bè & nhóm trong cache trước (chưa render để tránh nháy màn hình)
   await loadGroupsData(false);
+  await loadMyCloudId().catch(error => console.warn('Không tải được ID Cloud:', error.message));
 
-  // 3. Nạp lịch sử tin nhắn đã lưu trước đây (chỉ lấy tin nhắn thật)
-  if (window.electronAPI && window.electronAPI.getHistoryMessages) {
-    try {
-      const savedMessages = await window.electronAPI.getHistoryMessages();
-      if (Array.isArray(savedMessages) && savedMessages.length > 0) {
-        const realMsgs = savedMessages.filter(m => !m.isConversation && !(m.id && m.id.startsWith('conv_')));
-        
-        // Nạp nhanh hàng loạt vào messagesHistory 1 lần duy nhất (O(N)), không gọi renderFeed liên tục
-        const existingIds = new Set(messagesHistory.map(m => m.id));
-        const toAdd = [];
-        realMsgs.forEach(msg => {
-          if (msg && msg.id && !existingIds.has(msg.id)) {
-            existingIds.add(msg.id);
-            toAdd.push(msg);
-          }
-        });
-        if (toAdd.length > 0) {
-          messagesHistory.push(...toAdd);
-          messagesHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        }
-
-        const statusDesc = document.getElementById('local-storage-status-desc');
-        if (statusDesc) {
-          statusDesc.textContent = `💾 Đã lưu cục bộ: ${messagesHistory.length} tin nhắn • Tự động hiển thị khi mở app, không cần đồng bộ lại`;
-        }
-      }
-    } catch (e) {
-      console.warn('Lỗi khi nạp tin nhắn cũ từ ổ đĩa:', e);
+  // 3. Chỉ nạp tin mới nhất của mỗi hội thoại; phần còn lại mở theo trang khi cần.
+  try {
+    await refreshConversationHeads(false);
+    const status = await window.electronAPI.getSyncStatus?.();
+    const statusDesc = document.getElementById('local-storage-status-desc');
+    if (statusDesc && status?.totalMessages != null) {
+      statusDesc.textContent = `💾 Đã lưu cục bộ: ${Number(status.totalMessages).toLocaleString('vi-VN')} tin nhắn • Mở hội thoại để xem lịch sử`;
     }
+  } catch (e) {
+    console.warn('Lỗi khi nạp danh sách hội thoại:', e);
   }
 
   // 4. Render 1 lần duy nhất khi toàn bộ dữ liệu đã sẵn sàng: siêu tốc và không nháy!
   renderDashboardFeed();
+});
+
+function updateLocalPasswordUI(account) {
+  const current = document.getElementById('current-account-password');
+  const note = document.getElementById('local-account-password-note');
+  if (current) current.required = !!account?.requiresPassword;
+  if (note) note.textContent = account?.requiresPassword
+    ? 'Tài khoản đang có mật khẩu. Để trống mật khẩu mới nếu muốn gỡ khóa.'
+    : 'Tài khoản đang mở không cần mật khẩu. Nhập mật khẩu mới nếu muốn bật khóa.';
+}
+
+window.AccountModal.setupAccountModal({
+  dialog: document.getElementById('local-account-modal'),
+  trigger: document.getElementById('btn-open-local-account-modal'),
+  close: document.getElementById('btn-close-local-account-modal'),
+  form: document.getElementById('account-password-form')
+});
+
+document.getElementById('btn-switch-account')?.addEventListener('click', async () => {
+  await window.electronAPI.switchAccount();
+});
+
+window.electronAPI.onAccountNameUpdated?.(name => {
+  const label = document.getElementById('local-account-name');
+  if (label) label.textContent = name;
+  const summary = document.getElementById('local-account-summary');
+  if (summary) summary.textContent = name;
+  const avatar = document.querySelector('.local-account-avatar');
+  if (avatar && name) avatar.textContent = name[0].toUpperCase();
+});
+
+document.getElementById('account-password-form')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const current = document.getElementById('current-account-password');
+  const next = document.getElementById('new-account-password');
+  const confirm = document.getElementById('confirm-account-password');
+  const account = await window.electronAPI.getCurrentAccount();
+  if (!account?.requiresPassword && !next.value) {
+    showToast('Nhập mật khẩu mới để bật khóa tài khoản', 'info'); return;
+  }
+  if (next.value !== confirm.value) { showToast('Hai mật khẩu mới chưa khớp', 'error'); return; }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const result = await window.electronAPI.changeAccountPassword(current.value, next.value);
+    if (result.success) {
+      form.reset();
+      updateLocalPasswordUI({ requiresPassword: result.requiresPassword });
+      showToast(result.requiresPassword ? 'Đã cập nhật mật khẩu tài khoản' : 'Đã gỡ mật khẩu tài khoản', 'success');
+    } else showToast(result.error || 'Không thể đổi mật khẩu', 'error');
+  } catch (error) { showToast(error.message, 'error'); }
+  finally { button.disabled = false; }
 });
 
 // =========================================
@@ -306,15 +381,10 @@ if (btnSyncMessages) {
         const res = await window.electronAPI.syncOldMessages();
         console.log('Kết quả đồng bộ:', res);
 
-        if (res && res.success) {
-          // Nạp lại danh sách tin nhắn mới nhất để hiển thị ngay lập tức
-          if (window.electronAPI.getHistoryMessages) {
-            const latest = await window.electronAPI.getHistoryMessages();
-            if (Array.isArray(latest) && latest.length > 0) {
-              latest.forEach(m => addMessageToDashboard(m, true));
-              renderDashboardFeed();
-            }
-          }
+        if (res?.requestAccepted) {
+          showToast(res.message || 'Máy chủ đã nhận yêu cầu. Đang chờ điện thoại phản hồi.', 'info');
+        } else if (res?.success && res?.completed) {
+          await refreshConversationHeads();
         } else {
           showToast(res?.error || 'Không thể đồng bộ tin nhắn từ Zalo', 'error');
           closeSyncModal();
@@ -328,13 +398,15 @@ if (btnSyncMessages) {
       closeSyncModal();
     } finally {
       syncIcon.style.animation = '';
-      syncText.textContent = 'Đồng bộ tin nhắn cũ';
+      syncText.textContent = 'Đồng bộ từ điện thoại';
       btnSyncMessages.disabled = false;
     }
   });
 }
 
 let renderFeedRAF = null;
+let queuedOldMessages = [];
+let queuedOldMessagesRAF = null;
 function scheduleRenderFeed() {
   if (renderFeedRAF) cancelAnimationFrame(renderFeedRAF);
   renderFeedRAF = requestAnimationFrame(() => {
@@ -347,8 +419,22 @@ function addMessageToDashboard(msg, isOld = false) {
   // Loại bỏ hoàn toàn mục fake conversation (chứa status người khác)
   if (!msg || msg.isConversation || (msg.id && msg.id.startsWith('conv_'))) return;
 
+  if (isOld) {
+    queuedOldMessages.push(msg);
+    if (!queuedOldMessagesRAF) {
+      queuedOldMessagesRAF = requestAnimationFrame(() => {
+        queuedOldMessagesRAF = null;
+        const batch = queuedOldMessages;
+        queuedOldMessages = [];
+        messagesHistory = window.LazyHistory.mergeIncomingHistory(messagesHistory, batch, activeThreadId);
+        renderDashboardFeed();
+      });
+    }
+    return;
+  }
+
   // Tránh trùng lặp tin nhắn
-  const exists = messagesHistory.some(m => m.id === msg.id);
+  const exists = messagesHistory.some(m => String(m.threadId) === String(msg.threadId) && String(m.id) === String(msg.id));
   if (exists) return;
 
   messagesHistory.push(msg);
@@ -374,7 +460,7 @@ function addMessageToDashboard(msg, isOld = false) {
     renderDashboardFeed();
     const statusDesc = document.getElementById('local-storage-status-desc');
     if (statusDesc && messagesHistory.length > 0) {
-      statusDesc.textContent = `💾 Đã lưu cục bộ: ${messagesHistory.length} tin nhắn • Tự động hiển thị khi mở app, không cần đồng bộ lại`;
+      statusDesc.textContent = '💾 Tin nhắn được lưu cục bộ • Mở hội thoại để xem lịch sử';
     }
   }
 }
@@ -443,6 +529,18 @@ if (window.electronAPI && window.electronAPI.onMessageUndo) {
   });
 }
 
+if (window.electronAPI?.onPhotoCaptionUpdated) {
+  window.electronAPI.onPhotoCaptionUpdated(({ threadId, msgId, photoCaption }) => {
+    let changed = false;
+    for (const message of messagesHistory) {
+      if (String(message.id) !== String(msgId) || String(message.threadId) !== String(threadId)) continue;
+      message.photoCaption = photoCaption;
+      changed = true;
+    }
+    if (changed && String(activeThreadId) === String(threadId)) renderActiveChatThread();
+  });
+}
+
 // Lắng nghe sự kiện reaction từ người khác hoặc chính mình
 if (window.electronAPI && window.electronAPI.onMessageReaction) {
   window.electronAPI.onMessageReaction((reactionData) => {
@@ -494,11 +592,103 @@ if (window.electronAPI && window.electronAPI.onMessageReaction) {
 // QUẢN LÝ HỘI THOẠI 2 CỘT & NHÓM CHUẨN ZALO
 // =========================================
 let activeThreadId = null;
+const threadVisibleCounts = new Map();
+const threadHistoryExhausted = new Set();
+const threadHistoryLoading = new Set();
+const threadHistoryLoaded = new Set();
+
+async function refreshConversationHeads(shouldRender = true) {
+  if (!window.electronAPI?.getConversationHeads) return;
+  const heads = await window.electronAPI.getConversationHeads();
+  if (!Array.isArray(heads)) return;
+  const activeMessages = messagesHistory.filter(message => String(message.threadId) === String(activeThreadId));
+  messagesHistory = window.LazyHistory.retainActiveThreadMessages([...heads, ...activeMessages], activeThreadId);
+  for (const key of [...threadHistoryLoaded]) if (String(key) !== String(activeThreadId)) threadHistoryLoaded.delete(key);
+  if (shouldRender) renderDashboardFeed();
+}
+
+async function loadRecentThreadHistory(threadId) {
+  const key = String(threadId);
+  if (!window.electronAPI?.getThreadHistory || threadHistoryLoaded.has(key) || threadHistoryLoading.has(key)) return;
+  threadHistoryLoading.add(key);
+  try {
+    let page = await window.electronAPI.getThreadHistory(key, 50, 0);
+    if (key === myCloudId && page.length === 0 && window.electronAPI.fetchCloudMessages) {
+      const cloud = await window.electronAPI.fetchCloudMessages();
+      cloudRecentRefreshAt = Date.now();
+      page = cloud.messages || [];
+      if (cloud.hasMore && cloud.lastMsgId) cloudOlderCursor.set(key, cloud.lastMsgId);
+      else threadHistoryExhausted.add(key);
+    }
+    const known = new Set(messagesHistory.map(message => `${message.threadId}:${message.id}`));
+    for (const message of page) {
+      const identity = `${message.threadId}:${message.id}`;
+      if (!known.has(identity)) {
+        messagesHistory.push(message);
+        known.add(identity);
+      }
+    }
+    if (page.length > 0) messagesHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    threadHistoryLoaded.add(key);
+    if (String(activeThreadId) === key) renderDashboardFeed();
+  } catch (error) {
+    console.warn('Không tải được lịch sử hội thoại:', error.message);
+  } finally {
+    threadHistoryLoading.delete(key);
+  }
+}
+const groupSenderLookupAt = new Map();
+async function resolveVisibleGroupSenders(thread) {
+  if (!thread?.isGroup || !window.electronAPI?.resolveGroupSenderNames) return;
+  const now = Date.now();
+  const ids = [...new Set(thread.messages
+    .filter(msg => !msg.isSelf && (!msg.senderName || msg.senderName === 'Thành viên nhóm'))
+    .map(msg => String(msg.senderId || '')))]
+    .filter(id => /^\d{7,11}$/.test(id) && now - (groupSenderLookupAt.get(id) || 0) > 300000)
+    .slice(0, 50);
+  if (!ids.length) return;
+  ids.forEach(id => groupSenderLookupAt.set(id, now));
+  try {
+    const profiles = await window.electronAPI.resolveGroupSenderNames(thread.threadId, ids);
+    const byId = new Map((profiles || []).map(profile => [String(profile.plainId), profile]));
+    if (!byId.size) return;
+    for (const msg of messagesHistory) {
+      if (String(msg.threadId) !== String(thread.threadId)) continue;
+      const profile = byId.get(String(msg.senderId));
+      if (!profile || msg.isSelf) continue;
+      msg.senderName = profile.name;
+      if (profile.avatar && !msg.avatar) msg.avatar = profile.avatar;
+    }
+    if (String(activeThreadId) !== String(thread.threadId)) return;
+    for (const row of chatMessagesScroll.querySelectorAll('.chat-msg-row[data-sender-id]')) {
+      const profile = byId.get(row.dataset.senderId);
+      if (!profile) continue;
+      const heading = row.querySelector('.chat-msg-sender');
+      if (heading) heading.textContent = profile.name;
+      const avatar = row.querySelector('.chat-msg-avatar');
+      if (avatar) {
+        avatar.textContent = profile.name[0].toUpperCase();
+        if (profile.avatar) {
+          const img = document.createElement('img');
+          img.src = profile.avatar;
+          img.className = 'conv-avatar-img';
+          img.onerror = () => { img.remove(); avatar.textContent = profile.name[0].toUpperCase(); };
+          avatar.replaceChildren(img);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Không tải được tên thành viên nhóm:', error.message);
+  }
+}
+let messageFocusId = null;
 let searchQuery = '';
 let allGroupsList = [];
 let allFriendsList = [];
-let currentFilter = 'all'; // 'all' | 'user' | 'group'
+let currentFilter = 'all'; // 'all' | 'user' | 'group' | 'pinned'
 let pinnedThreadIds = new Set();
+const pinnedConversationsFilter = document.getElementById('pinned-conversations-filter');
+const pinnedConversationsCount = document.getElementById('pinned-conversations-count');
 let mutedThreadIds = new Set();
 let replyingToMessage = null;
 let selectedAttachment = null;
@@ -506,11 +696,14 @@ let selectedAttachment = null;
 // =========================================
 // QUẢN LÝ TRẠNG THÁI ĐÃ ĐỌC TIN NHẮN (LƯU LOCAL)
 // =========================================
+const dashboardAccountParams = new URLSearchParams(window.location.search);
+const accountStorage = createAccountStorage(window.localStorage,
+  dashboardAccountParams.get('accountId'), dashboardAccountParams.get('legacy') === '1');
 const STORAGE_KEY_READ_THREADS = 'nhitzalo_read_thread_timestamps';
 
 function loadReadThreadsLocal() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_READ_THREADS);
+    const raw = accountStorage.getItem(STORAGE_KEY_READ_THREADS);
     if (raw) return JSON.parse(raw);
   } catch (e) {
     console.warn('Lỗi đọc trạng thái đã xem tin nhắn từ local:', e);
@@ -520,7 +713,7 @@ function loadReadThreadsLocal() {
 
 function saveReadThreadsLocal(data) {
   try {
-    localStorage.setItem(STORAGE_KEY_READ_THREADS, JSON.stringify(data));
+    accountStorage.setItem(STORAGE_KEY_READ_THREADS, JSON.stringify(data));
   } catch (e) {
     console.warn('Lỗi lưu trạng thái đã xem tin nhắn vào local:', e);
   }
@@ -546,6 +739,12 @@ if (window.electronAPI && window.electronAPI.getReadThreads) {
 
 // Cập nhật tổng số tin chưa đọc trên tab tin nhắn của Dashboard
 function updateDashboardTabUnread() {
+  // Trên tab tin nhắn badge luôn ẩn; bỏ qua phép nhóm và sắp xếp toàn bộ lịch sử
+  // để thao tác mở hội thoại không bị chặn khi dữ liệu lớn.
+  if (currentTab === 'tab-messages') {
+    tabUnreadBadge?.classList.add('hidden');
+    return;
+  }
   if (typeof getGroupedThreads !== 'function') return;
   const threads = getGroupedThreads();
   let total = 0;
@@ -626,9 +825,14 @@ if (window.electronAPI && window.electronAPI.onThreadMarkedAsRead) {
     readThreadTimestamps['g_' + cId] = now;
     saveReadThreadsLocal(readThreadTimestamps);
 
-    if (typeof renderDashboardFeed === 'function') {
-      renderDashboardFeed();
-    }
+    // Chỉ cập nhật badge. Dựng lại toàn bộ danh sách ở đây có thể thay DOM
+    // ngay trong lúc người dùng đang bấm chọn một hội thoại.
+    conversationList?.querySelectorAll('.conv-item').forEach(item => {
+      const itemId = String(item.dataset.threadId || '');
+      if (itemId === sId || itemId.replace(/^g_/, '') === cId) {
+        item.querySelector('.conv-badge')?.remove();
+      }
+    });
     updateDashboardTabUnread();
   });
 }
@@ -725,6 +929,48 @@ const btnToggleMuteChat = document.getElementById('btn-toggle-mute-chat');
 const iconMuteHeader = document.getElementById('icon-mute-header');
 const iconBellHeader = document.getElementById('icon-bell-header');
 const chatMessagesScroll = document.getElementById('chat-messages-scroll');
+const linkPreviewRequests = new Map();
+const linkPreviewQueue = [];
+let activeLinkPreviewRequests = 0;
+let linkPreviewObserver = null;
+if (chatMessagesScroll) chatMessagesScroll.addEventListener('click', event => {
+  const link = event.target.closest('.chat-link-card');
+  if (!link) return;
+  event.preventDefault();
+  window.electronAPI?.openExternalLink?.(link.dataset.linkUrl);
+});
+
+async function loadLinkPreviewCard(card, msg) {
+  if (!window.electronAPI?.getLinkPreview) return;
+  const url = card.dataset.linkUrl;
+  if (!url || (msg.linkPreview?.title && msg.linkPreview?.image && msg.linkPreview?.description)) return;
+  if (!linkPreviewRequests.has(url)) {
+    const request = new Promise(resolve => {
+      linkPreviewQueue.push(async () => {
+        try { resolve(await window.electronAPI.getLinkPreview(url)); }
+        catch (_) { resolve(null); }
+        finally {
+          activeLinkPreviewRequests--;
+          drainLinkPreviewQueue();
+        }
+      });
+      drainLinkPreviewQueue();
+    });
+    linkPreviewRequests.set(url, request);
+    if (linkPreviewRequests.size > 500) linkPreviewRequests.delete(linkPreviewRequests.keys().next().value);
+  }
+  const metadata = await linkPreviewRequests.get(url);
+  if (!metadata || !card.isConnected) return;
+  msg.linkPreview = { ...metadata, ...Object.fromEntries(Object.entries(msg.linkPreview || {}).filter(([, value]) => value)) };
+  card.closest('.chat-link-wrapper').outerHTML = window.LinkPreview.renderCard(msg, msg.linkPreview);
+}
+
+function drainLinkPreviewQueue() {
+  while (activeLinkPreviewRequests < 3 && linkPreviewQueue.length) {
+    activeLinkPreviewRequests++;
+    linkPreviewQueue.shift()();
+  }
+}
 const chatReplyInput = document.getElementById('chat-reply-input');
 const btnSendChatReply = document.getElementById('btn-send-chat-reply');
 const btnFetchGroups = document.getElementById('btn-fetch-groups');
@@ -915,9 +1161,99 @@ async function loadGroupsData(shouldRender = true) {
   if (shouldRender && hasDataChange) {
     scheduleRenderFeed();
   }
+  if (currentTab === 'tab-contacts') renderDirectory();
 }
 
+// Danh bạ dùng cùng dữ liệu cache với màn hội thoại
+let directoryFilter = 'all';
+function renderDirectory() {
+  const list = document.getElementById('directory-list');
+  const status = document.getElementById('directory-status');
+  const search = document.getElementById('directory-search');
+  if (!list || !status) return;
+  const term = (search?.value || '').trim().toLocaleLowerCase('vi');
+  const friends = (allFriendsList || []).map(friend => ({
+    id: String(friend.userId || ''),
+    name: friend.displayName || friend.zaloName || friend.name || 'Bạn bè Zalo',
+    avatar: friend.avatar || '', isGroup: false
+  })).filter(item => item.id);
+  const groups = (allGroupsList || []).map(group => ({
+    id: String(group.groupId || ''), name: group.name || 'Nhóm Zalo',
+    avatar: group.avatar || '', isGroup: true, memberCount: group.totalMember || 0
+  })).filter(item => item.id);
+  const entries = (directoryFilter === 'friends' ? friends : directoryFilter === 'groups' ? groups : [...friends, ...groups])
+    .filter(item => item.name.toLocaleLowerCase('vi').includes(term))
+    .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  list.replaceChildren();
+  status.textContent = `${friends.length} bạn bè • ${groups.length} nhóm${term ? ` • ${entries.length} kết quả` : ''}`;
+  if (!entries.length) {
+    status.textContent = term ? 'Không tìm thấy. Hãy thử tên khác.' : 'Danh bạ trống. Hãy kết nối Zalo hoặc bấm Làm mới.';
+    return;
+  }
+  for (const entry of entries) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'directory-item';
+    const avatar = document.createElement('span');
+    avatar.className = 'directory-avatar';
+    if (entry.avatar) {
+      const image = document.createElement('img');
+      image.src = entry.avatar;
+      image.alt = '';
+      image.onerror = () => { avatar.textContent = entry.name[0].toUpperCase(); };
+      avatar.appendChild(image);
+    } else avatar.textContent = entry.name[0].toUpperCase();
+    const body = document.createElement('span');
+    body.className = 'directory-item-body';
+    const name = document.createElement('strong');
+    name.textContent = entry.name;
+    const detail = document.createElement('small');
+    detail.textContent = entry.isGroup ? `Nhóm • ${entry.memberCount} thành viên` : 'Bạn bè • Bấm để nhắn tin';
+    body.append(name, detail);
+    button.append(avatar, body);
+    button.addEventListener('click', () => {
+      activeThreadId = entry.id;
+      messageFocusId = null;
+      document.querySelector('[data-tab="tab-messages"]')?.click();
+      renderDashboardFeed();
+      markThreadAsRead(activeThreadId);
+    });
+    list.appendChild(button);
+  }
+}
+
+document.querySelector('[data-tab="tab-contacts"]')?.addEventListener('click', renderDirectory);
+document.getElementById('directory-search')?.addEventListener('input', renderDirectory);
+document.querySelectorAll('[data-directory-filter]').forEach(button => button.addEventListener('click', () => {
+  directoryFilter = button.dataset.directoryFilter;
+  document.querySelectorAll('[data-directory-filter]').forEach(item => item.classList.toggle('active', item === button));
+  renderDirectory();
+}));
+document.getElementById('btn-refresh-contacts')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = 'Đang tải...';
+  try {
+    const [friends, groups] = await Promise.all([
+      window.electronAPI.fetchFriendsList(), window.electronAPI.fetchGroupsList()
+    ]);
+    if (Array.isArray(friends)) allFriendsList = friends;
+    if (Array.isArray(groups)) allGroupsList = groups;
+    renderDirectory();
+    renderDashboardFeed();
+  } catch (error) {
+    showToast(`Không thể làm mới danh bạ: ${error.message}`, 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Làm mới';
+  }
+});
+
 // Nhóm tin nhắn theo Thread ID và kết hợp với danh sách bạn bè & nhóm Zalo
+function specificThreadName(name) {
+  return name && name !== 'Bạn bè Zalo' && name !== 'Nhóm Zalo' ? name : '';
+}
+
 function getGroupedThreads() {
   const threadsMap = {};
 
@@ -948,11 +1284,8 @@ function getGroupedThreads() {
       initialAvatar = msg.threadAvatar || '';
     } else {
       if (friendInfo) {
-        initialName = friendInfo.displayName || friendInfo.zaloName;
+        initialName = specificThreadName(friendInfo.displayName) || specificThreadName(friendInfo.zaloName) || specificThreadName(msg.threadName);
         initialAvatar = friendInfo.avatar || '';
-      } else if (tId === '2042301864567047451') {
-        initialName = 'Mr Hoàng';
-        initialAvatar = 'https://s120-26-ava-talk.zadn.vn/1/579d789c2af7a3b6ce823d828bef01f6.jpg?key=6SYl9V98kq62LlHqgy7Mig&time=1797736544';
       } else {
         initialName = msg.threadName || (!msg.isSelf ? msg.senderName : 'Bạn bè Zalo');
         initialAvatar = msg.threadAvatar || (!msg.isSelf ? msg.avatar : '');
@@ -971,13 +1304,10 @@ function getGroupedThreads() {
 
     // Cập nhật tên và avatar chuẩn xác
     if (friendInfo) {
-      threadsMap[tId].senderName = friendInfo.displayName || friendInfo.zaloName;
+      const friendName = specificThreadName(friendInfo.displayName) || specificThreadName(friendInfo.zaloName);
+      if (friendName) threadsMap[tId].senderName = friendName;
+      else if (specificThreadName(msg.threadName)) threadsMap[tId].senderName = msg.threadName;
       if (friendInfo.avatar) threadsMap[tId].avatar = friendInfo.avatar;
-    } else if (tId === '2042301864567047451') {
-      threadsMap[tId].senderName = 'Mr Hoàng';
-      if (!threadsMap[tId].avatar) {
-        threadsMap[tId].avatar = 'https://s120-26-ava-talk.zadn.vn/1/579d789c2af7a3b6ce823d828bef01f6.jpg?key=6SYl9V98kq62LlHqgy7Mig&time=1797736544';
-      }
     } else {
       if (msg.threadName) {
         threadsMap[tId].senderName = msg.threadName;
@@ -1015,7 +1345,7 @@ function getGroupedThreads() {
         };
       } else {
         // Nhóm đã có tin nhắn: cập nhật thêm tên nhóm và avatar chính xác
-        if (grp.name) threadsMap[gId].senderName = grp.name;
+        if (specificThreadName(grp.name)) threadsMap[gId].senderName = grp.name;
         if (grp.avatar) threadsMap[gId].avatar = grp.avatar;
         threadsMap[gId].totalMember = grp.totalMember || 0;
         threadsMap[gId].isGroup = true;
@@ -1045,7 +1375,8 @@ function getGroupedThreads() {
           };
         }
       } else {
-        if (fr.displayName || fr.zaloName) threadsMap[uId].senderName = fr.displayName || fr.zaloName;
+        const friendName = specificThreadName(fr.displayName) || specificThreadName(fr.zaloName);
+        if (friendName) threadsMap[uId].senderName = friendName;
         if (fr.avatar) threadsMap[uId].avatar = fr.avatar;
       }
     });
@@ -1066,7 +1397,7 @@ function getGroupedThreads() {
   });
 
   // Thêm mục Cloud của tôi (Truyền File) luôn luôn hiện diện ở đầu
-  const CLOUD_ID = 'my_cloud';
+  const CLOUD_ID = myCloudId || 'my_cloud';
   if (!threadsMap[CLOUD_ID]) {
     threadsMap[CLOUD_ID] = {
       threadId: CLOUD_ID,
@@ -1093,6 +1424,8 @@ function getGroupedThreads() {
     list = list.filter(t => !t.isGroup);
   } else if (currentFilter === 'group') {
     list = list.filter(t => t.isGroup);
+  } else if (currentFilter === 'pinned') {
+    list = list.filter(t => pinnedThreadIds.has(String(t.threadId)));
   }
 
   // Sắp xếp: Cloud của tôi lên đầu tiên -> Hội thoại ghim -> Hội thoại có tin nhắn mới nhất
@@ -1114,12 +1447,16 @@ function getGroupedThreads() {
 // Render toàn bộ giao diện hội thoại 2 cột
 function renderDashboardFeed() {
   const threads = getGroupedThreads();
+  if (pinnedConversationsCount) pinnedConversationsCount.textContent = String(pinnedThreadIds.size);
+  pinnedConversationsFilter?.classList.toggle('active', currentFilter === 'pinned');
 
   if (threads.length === 0) {
     if (conversationList) {
       const emptyMsg = currentFilter === 'group'
         ? 'Chưa có nhóm nào. Bấm "Làm mới Nhóm" ở trên để tải danh sách nhóm Zalo!'
-        : (currentFilter === 'user' ? 'Chưa có cuộc trò chuyện cá nhân nào' : 'Chưa có cuộc trò chuyện nào');
+        : (currentFilter === 'user' ? 'Chưa có cuộc trò chuyện cá nhân nào'
+          : (currentFilter === 'pinned' ? 'Chưa ghim người hoặc nhóm nào. Nhấp chuột phải vào một hội thoại để ghim.'
+            : 'Chưa có cuộc trò chuyện nào'));
       conversationList.innerHTML = `<div style="padding: 24px 16px; text-align: center; color: #64748B; font-size: 13px;">${emptyMsg}</div>`;
     }
     if (chatMessagesScroll) {
@@ -1138,6 +1475,7 @@ function renderDashboardFeed() {
   }
 
   // Tự động chọn cuộc trò chuyện đầu tiên nếu chưa chọn hoặc id không còn tồn tại
+  const previousThreadId = activeThreadId;
   if (!activeThreadId || !threads.some(t => String(t.threadId) === String(activeThreadId))) {
     activeThreadId = String(threads[0].threadId);
   }
@@ -1147,9 +1485,19 @@ function renderDashboardFeed() {
 
   // 2. Render cột bên phải (Nội dung chi tiết của hội thoại đang chọn)
   renderActiveChatThread(threads);
+  if (String(previousThreadId || '') !== String(activeThreadId)) {
+    markThreadAsRead(activeThreadId);
+  }
 }
 
 // Render danh sách hội thoại bên trái
+const CONVERSATION_ROW_HEIGHT = 70;
+let virtualConversationThreads = [];
+let virtualConversationAllThreads = [];
+let virtualConversationRange = '';
+let virtualConversationFilter = '';
+let virtualConversationRAF = null;
+
 function renderConversationList(threads) {
   if (!conversationList) return;
 
@@ -1158,14 +1506,36 @@ function renderConversationList(threads) {
                           (t.lastMessage && t.lastMessage.content && t.lastMessage.content.toLowerCase().includes(searchQuery.toLowerCase())))
     : threads;
 
-  conversationList.innerHTML = '';
+  const filterKey = `${currentFilter}:${searchQuery}`;
+  if (filterKey !== virtualConversationFilter) conversationList.scrollTop = 0;
+  virtualConversationFilter = filterKey;
+  virtualConversationThreads = filtered;
+  virtualConversationAllThreads = threads;
+  renderVisibleConversationRows(true);
+}
+
+function renderVisibleConversationRows(force = false) {
+  if (!conversationList) return;
+  const filtered = virtualConversationThreads;
+  const scrollTop = conversationList.scrollTop;
+  const range = window.LazyHistory.getVirtualRange(filtered.length, scrollTop,
+    conversationList.clientHeight || 700, CONVERSATION_ROW_HEIGHT, 8);
+  const rangeKey = `${range.start}:${range.end}:${filtered.length}`;
+  if (!force && rangeKey === virtualConversationRange) return;
+  virtualConversationRange = rangeKey;
+  conversationList.replaceChildren();
 
   if (filtered.length === 0) {
     conversationList.innerHTML = '<div style="padding: 24px 14px; text-align: center; color: #64748B; font-size: 12.5px;">Không tìm thấy kết quả phù hợp</div>';
     return;
   }
 
-  filtered.forEach(thread => {
+  const topSpacer = document.createElement('div');
+  topSpacer.className = 'conv-virtual-spacer';
+  topSpacer.style.height = `${range.top}px`;
+  conversationList.appendChild(topSpacer);
+
+  filtered.slice(range.start, range.end).forEach((thread, offset) => {
     const item = document.createElement('div');
     const isActive = String(thread.threadId) === String(activeThreadId);
     const isPinned = pinnedThreadIds.has(String(thread.threadId));
@@ -1173,6 +1543,10 @@ function renderConversationList(threads) {
     const isCloud = !!thread.isCloud;
     item.className = 'conv-item' + (isActive ? ' active' : '') + (isCloud ? ' cloud-item' : '');
     item.setAttribute('data-thread-id', thread.threadId);
+    item.dataset.conversationIndex = String(range.start + offset);
+    item.setAttribute('role', 'button');
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('aria-label', `Mở hội thoại ${thread.senderName}`);
 
     const initial = (thread.senderName || 'Z')[0].toUpperCase();
     const avatarHtml = isCloud
@@ -1182,7 +1556,7 @@ function renderConversationList(threads) {
         : `<span class="conv-avatar-letter">${escapeHTML(initial)}</span>`);
 
     const lastMsg = thread.lastMessage || {};
-    const lastContent = lastMsg.content || (thread.isGroup ? `[Nhóm • ${thread.totalMember || 0} thành viên]` : '[Chưa có tin nhắn]');
+    const lastContent = window.CallMessage.describeCallMessage(lastMsg) || (thread.isGroup ? `[Nhóm • ${thread.totalMember || 0} thành viên]` : '[Chưa có tin nhắn]');
     const lastTime = lastMsg.time || '';
 
     item.innerHTML = `
@@ -1235,19 +1609,16 @@ function renderConversationList(threads) {
       muteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const nextMuted = !isMuted;
-        if (nextMuted) {
-          mutedThreadIds.add(String(thread.threadId));
-          showToast(`Đã tắt thông báo "${thread.senderName}". Sẽ không phát âm thanh khi có tin nhắn mới.`, 'info');
-        } else {
-          mutedThreadIds.delete(String(thread.threadId));
-          showToast(`Đã bật lại thông báo cho "${thread.senderName}"`, 'success');
+        try {
+          const result = await window.electronAPI.setThreadMute(thread.threadId, nextMuted, thread.isGroup, -1);
+          if (!result?.success) throw new Error(result?.error || 'Zalo từ chối cập nhật');
+          if (nextMuted) mutedThreadIds.add(String(thread.threadId));
+          else mutedThreadIds.delete(String(thread.threadId));
+          showToast(nextMuted ? `Đã tắt thông báo "${thread.senderName}"` : `Đã bật thông báo "${thread.senderName}"`, 'success');
+          renderDashboardFeed();
+        } catch (err) {
+          showToast(`Không thể đổi thông báo: ${err.message}`, 'error');
         }
-        if (window.electronAPI && window.electronAPI.setThreadMute) {
-          try {
-            await window.electronAPI.setThreadMute(thread.threadId, nextMuted, thread.isGroup, -1);
-          } catch (err) {}
-        }
-        renderDashboardFeed();
       });
     }
 
@@ -1257,19 +1628,16 @@ function renderConversationList(threads) {
       pinBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const nextPinned = !isPinned;
-        if (nextPinned) {
-          pinnedThreadIds.add(String(thread.threadId));
-          showToast(`Đã ghim "${thread.senderName}" lên đầu`, 'info');
-        } else {
-          pinnedThreadIds.delete(String(thread.threadId));
-          showToast(`Đã bỏ ghim "${thread.senderName}"`, 'info');
+        try {
+          const result = await window.electronAPI.setPinnedConversation(thread.threadId, nextPinned, thread.isGroup);
+          if (!result?.success) throw new Error(result?.error || 'Zalo từ chối cập nhật');
+          if (nextPinned) pinnedThreadIds.add(String(thread.threadId));
+          else pinnedThreadIds.delete(String(thread.threadId));
+          showToast(nextPinned ? `Đã ghim "${thread.senderName}"` : `Đã bỏ ghim "${thread.senderName}"`, 'success');
+          renderDashboardFeed();
+        } catch (err) {
+          showToast(`Không thể đổi trạng thái ghim: ${err.message}`, 'error');
         }
-        if (window.electronAPI && window.electronAPI.setPinnedConversation) {
-          try {
-            await window.electronAPI.setPinnedConversation(thread.threadId, nextPinned, thread.isGroup);
-          } catch (err) {}
-        }
-        renderDashboardFeed();
       });
     }
 
@@ -1279,6 +1647,9 @@ function renderConversationList(threads) {
       if (activeThreadId === newThreadId) return; // Đang xem hội thoại này rồi, không nháy lại
 
       activeThreadId = newThreadId;
+      messageFocusId = null;
+      messagesHistory = window.LazyHistory.retainActiveThreadMessages(messagesHistory, activeThreadId);
+      for (const key of [...threadHistoryLoaded]) if (key !== activeThreadId) threadHistoryLoaded.delete(key);
       markThreadAsRead(thread.threadId); // Lưu local: đã xem, không hiển thị số tin nhắn nữa
 
       // Cập nhật class active trên danh sách mà không cần build lại toàn bộ sidebar
@@ -1291,23 +1662,55 @@ function renderConversationList(threads) {
       if (badge) badge.remove();
 
       // Render nội dung tin nhắn ngay lập tức (0ms độ trễ, không đơ lag)
-      renderActiveChatThread();
+      renderActiveChatThread(virtualConversationAllThreads);
+    });
+    item.addEventListener('keydown', (event) => {
+      if (event.target !== item) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        item.click();
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const next = Math.max(0, Math.min(filtered.length - 1,
+          Number(item.dataset.conversationIndex) + (event.key === 'ArrowDown' ? 1 : -1)));
+        const viewportTop = conversationList.scrollTop;
+        const targetTop = next * CONVERSATION_ROW_HEIGHT;
+        if (targetTop < viewportTop) conversationList.scrollTop = targetTop;
+        else if (targetTop + CONVERSATION_ROW_HEIGHT > viewportTop + conversationList.clientHeight) {
+          conversationList.scrollTop = targetTop + CONVERSATION_ROW_HEIGHT - conversationList.clientHeight;
+        }
+        renderVisibleConversationRows(true);
+        conversationList.querySelector(`[data-conversation-index="${next}"]`)?.focus();
+      }
     });
 
     conversationList.appendChild(item);
   });
+  const bottomSpacer = document.createElement('div');
+  bottomSpacer.className = 'conv-virtual-spacer';
+  bottomSpacer.style.height = `${range.bottom}px`;
+  conversationList.appendChild(bottomSpacer);
+  conversationList.scrollTop = scrollTop;
 }
+
+conversationList?.addEventListener('scroll', () => {
+  if (virtualConversationRAF) return;
+  virtualConversationRAF = requestAnimationFrame(() => {
+    virtualConversationRAF = null;
+    renderVisibleConversationRows();
+  });
+});
 
 // Render toàn bộ tin nhắn của cuộc hội thoại đang chọn ở cột phải có scroll
 function renderActiveChatThread(threads) {
   if (!threads) threads = getGroupedThreads();
   const currentThread = threads.find(t => String(t.threadId) === String(activeThreadId)) || threads[0];
   if (!currentThread) return;
-
-  // Đánh dấu cuộc trò chuyện đang hiển thị là đã xem và lưu vào local
-  if (typeof markThreadAsRead === 'function') {
-    markThreadAsRead(currentThread.threadId);
-  }
+  linkPreviewObserver?.disconnect();
+  linkPreviewObserver = null;
+  resolveVisibleGroupSenders(currentThread);
+  if (currentThread.messages.length < 50) loadRecentThreadHistory(currentThread.threadId);
+  if (currentThread.isCloud && currentThread.messages.length > 0) refreshCloudRecent();
 
   // Tự động đồng bộ Panel Thông tin hội thoại bên phải nếu đang mở
   if (typeof isInfoPanelOpen !== 'undefined' && isInfoPanelOpen && typeof renderConversationInfoPanel === 'function') {
@@ -1317,6 +1720,7 @@ function renderActiveChatThread(threads) {
   // Tự động đồng bộ Thanh Ghim Tin Nhắn (Pinned Message Bar)
   if (typeof renderPinnedMessageBar === 'function') {
     renderPinnedMessageBar(currentThread);
+    loadServerPinnedMessages(currentThread);
   }
 
   // Cập nhật Header
@@ -1335,7 +1739,7 @@ function renderActiveChatThread(threads) {
         ? `Nhóm Zalo • ${currentThread.totalMember || 0} thành viên`
         : 'Tin nhắn Cá nhân';
     }
-    if (activeChatCount) activeChatCount.textContent = `${currentThread.messages.length} tin nhắn`;
+    if (activeChatCount) activeChatCount.textContent = `${currentThread.messages.length} tin đã tải`;
 
     const initial = (currentThread.senderName || 'Z')[0].toUpperCase();
     if (activeChatAvatar) {
@@ -1406,7 +1810,11 @@ function renderActiveChatThread(threads) {
         btnFetch.textContent = 'Đang tải tin nhắn...';
         if (window.electronAPI && window.electronAPI.fetchThreadMessages) {
           try {
-            const fetched = await window.electronAPI.fetchThreadMessages(currentThread.threadId, currentThread.isGroup);
+            const local = window.electronAPI.getThreadHistory
+              ? await window.electronAPI.getThreadHistory(currentThread.threadId, 50, 0) : [];
+            const fetched = local.length > 0
+              ? local
+              : await window.electronAPI.fetchThreadMessages(currentThread.threadId, currentThread.isGroup);
             if (Array.isArray(fetched) && fetched.length > 0) {
               fetched.forEach(m => addMessageToDashboard(m, true));
               renderDashboardFeed();
@@ -1427,13 +1835,72 @@ function renderActiveChatThread(threads) {
     return;
   }
 
-  currentThread.messages.forEach(msg => {
+  const visibleCount = threadVisibleCounts.get(String(currentThread.threadId)) || 100;
+  const focusIndex = messageFocusId && String(currentThread.threadId) === String(activeThreadId)
+    ? currentThread.messages.findIndex(m => String(m.id) === String(messageFocusId)) : -1;
+  const visibleMessages = focusIndex >= 0
+    ? currentThread.messages.slice(Math.max(0, focusIndex - 50), focusIndex + 51)
+    : currentThread.messages.slice(-visibleCount);
+
+  if (focusIndex >= 0) {
+    const backToLatest = document.createElement('button');
+    backToLatest.type = 'button';
+    backToLatest.className = 'chat-history-more';
+    backToLatest.textContent = 'Về tin mới nhất';
+    backToLatest.addEventListener('click', () => {
+      messageFocusId = null;
+      renderActiveChatThread();
+    });
+    chatMessagesScroll.appendChild(backToLatest);
+  } else if (!threadHistoryExhausted.has(String(currentThread.threadId))) {
+    const loadOlder = document.createElement('button');
+    loadOlder.type = 'button';
+    loadOlder.className = 'chat-history-more';
+    loadOlder.textContent = 'Tải tin nhắn cũ hơn';
+    loadOlder.addEventListener('click', async () => {
+      loadOlder.disabled = true;
+      loadOlder.textContent = 'Đang tải...';
+      const threadKey = String(currentThread.threadId);
+      if (currentThread.messages.length > visibleCount) {
+        threadVisibleCounts.set(threadKey, visibleCount + 50);
+        renderActiveChatThread();
+        return;
+      }
+      try {
+        let older = await window.electronAPI.getThreadHistory(threadKey, 50, currentThread.messages.length);
+        if (older.length === 0 && currentThread.isCloud && window.electronAPI.fetchCloudMessages) {
+          const cursor = cloudOlderCursor.get(threadKey) || String(currentThread.messages[0]?.id || '0');
+          const cloud = await window.electronAPI.fetchCloudMessages(cursor, true);
+          older = cloud.messages || [];
+          if (cloud.hasMore && cloud.lastMsgId && cloud.lastMsgId !== cursor) cloudOlderCursor.set(threadKey, cloud.lastMsgId);
+          else threadHistoryExhausted.add(threadKey);
+        }
+        if (older.length === 0) {
+          if (!currentThread.isCloud) threadHistoryExhausted.add(threadKey);
+        } else {
+          threadVisibleCounts.set(threadKey, visibleCount + older.length);
+          older.forEach(m => addMessageToDashboard(m, true));
+        }
+        renderActiveChatThread();
+      } catch (error) {
+        loadOlder.disabled = false;
+        loadOlder.textContent = 'Tải tin nhắn cũ hơn';
+        showToast(`Không thể tải lịch sử: ${error.message}`, 'error');
+      }
+    });
+    chatMessagesScroll.appendChild(loadOlder);
+  }
+
+  visibleMessages.forEach(msg => {
     const row = document.createElement('div');
     const isSelf = !!msg.isSelf;
     row.className = 'chat-msg-row ' + (isSelf ? 'self' : 'other');
     row.setAttribute('data-msg-id', msg.id || ('cli_' + (msg.cliMsgId || '')));
+    if (currentThread.isGroup && !isSelf) row.dataset.senderId = String(msg.senderId || '');
 
-    const msgInitial = (msg.senderName || 'Z')[0].toUpperCase();
+    const groupSenderName = msg.senderName || (currentThread.isGroup && !isSelf
+      ? `Thành viên • ${String(msg.senderId || '').slice(-4) || '?'}` : '');
+    const msgInitial = (groupSenderName || 'Z')[0].toUpperCase();
     const avatarHtml = !isSelf
       ? `<div class="chat-msg-avatar">
           ${msg.avatar ? `<img src="${escapeHTML(msg.avatar)}" class="conv-avatar-img" onerror="this.style.display='none';">` : escapeHTML(msgInitial)}
@@ -1441,7 +1908,7 @@ function renderActiveChatThread(threads) {
       : '';
 
     const senderHeaderHtml = (!isSelf && currentThread.isGroup)
-      ? `<span class="chat-msg-sender">${escapeHTML(msg.senderName)}</span>`
+      ? `<span class="chat-msg-sender">${escapeHTML(groupSenderName)}</span>`
       : '';
 
     const quoteHtml = msg.quote ? `
@@ -1513,12 +1980,26 @@ function renderActiveChatThread(threads) {
     const isFileMsg = !isRevokedMsg && (msg.isFile || !!msg.fileUrl || (typeof msg.content === 'string' && msg.content.startsWith('[Tài liệu:')));
     const isPollMsg = !isRevokedMsg && (msg.isPoll || !!msg.pollData || (typeof msg.content === 'string' && msg.content.startsWith('[Bình chọn:')));
     const isReminderMsg = !isRevokedMsg && (msg.isReminder || !!msg.reminderData || (typeof msg.content === 'string' && msg.content.startsWith('[Nhắc hẹn:')));
+    const linkUrl = !isRevokedMsg ? window.LinkPreview.getMessageUrl(msg) : '';
+    const voice = !isRevokedMsg ? window.VoiceMessage.getVoicePresentation(msg) : { isVoice: false };
 
     if (isRevokedMsg) {
       msgBodyHtml = `
         <div class="chat-bubble ${isSelf ? 'self' : 'other'} revoked-bubble" title="Tin nhắn này đã bị người gửi thu hồi">
           <span class="revoked-icon">🚫</span>
           <span class="revoked-text">Tin nhắn đã được thu hồi</span>
+        </div>
+      `;
+    } else if (voice.isVoice) {
+      msgBodyHtml = `
+        <div class="chat-bubble ${isSelf ? 'self' : 'other'} chat-voice-bubble">
+          <span class="chat-voice-icon" aria-hidden="true">🎤</span>
+          <div class="chat-voice-content">
+            <span class="chat-voice-title">Tin nhắn thoại${voice.duration ? ` • ${escapeHTML(voice.duration)}` : ''}</span>
+            ${voice.url
+              ? `<audio controls preload="none" src="${escapeHTML(voice.url)}" aria-label="Phát tin nhắn thoại"></audio>`
+              : '<span class="chat-voice-unavailable">Chưa có tệp âm thanh trong lịch sử đã đồng bộ</span>'}
+          </div>
         </div>
       `;
     } else if (isPollMsg) {
@@ -1573,10 +2054,14 @@ function renderActiveChatThread(threads) {
       `;
     } else if (isPhotoMsg) {
       const pUrl = msg.photoUrl || msg.thumbUrl || msg.content;
+      const photoCaption = window.PhotoCaption.getPhotoCaption(msg);
       msgBodyHtml = `
-        <div class="chat-msg-img-wrap" data-img-src="${escapeHTML(pUrl)}">
-          <img src="${escapeHTML(pUrl)}" class="chat-msg-img" loading="lazy" alt="Hình ảnh Zalo" onerror="this.onerror=null; this.src='../assets/zalo-icons/icon-photo.svg';">
-          <div class="chat-img-overlay-btn">🔍 Xem ảnh</div>
+        <div class="chat-msg-img-wrap ${photoCaption ? 'has-caption' : ''}" data-img-src="${escapeHTML(pUrl)}">
+          <div class="chat-msg-image-surface">
+            <img src="${escapeHTML(pUrl)}" class="chat-msg-img" loading="lazy" alt="Hình ảnh Zalo" onerror="this.onerror=null; this.src='../assets/zalo-icons/icon-photo.svg';">
+            <div class="chat-img-overlay-btn">🔍 Xem ảnh</div>
+          </div>
+          ${photoCaption ? `<div class="chat-photo-caption">${escapeHTML(photoCaption)}</div>` : ''}
         </div>
       `;
     } else if (isVideoMsg) {
@@ -1628,11 +2113,13 @@ function renderActiveChatThread(threads) {
           </div>
         </div>
       `;
+    } else if (linkUrl) {
+      msgBodyHtml = window.LinkPreview.renderCard(msg, msg.linkPreview || {});
     } else {
       msgBodyHtml = `
         <div class="chat-bubble ${isSelf ? 'self' : 'other'}">
           ${quoteHtml}
-          ${escapeHTML(msg.content)}
+          ${escapeHTML(window.CallMessage.describeCallMessage(msg))}
         </div>
       `;
     }
@@ -1649,13 +2136,16 @@ function renderActiveChatThread(threads) {
       ${!isRevokedMsg ? `
       <!-- Action buttons floating on hover -->
       <div class="chat-msg-actions">
-        <div class="reaction-picker-menu">
-          <span class="reaction-pick-emoji" data-emoji="❤️" title="Thả tim"><img src="../assets/zalo-icons/Heart_24_emoji.svg" alt="Tim"></span>
-          <span class="reaction-pick-emoji" data-emoji="👍" title="Thích"><img src="../assets/zalo-icons/Like_24_emoji.svg" alt="Thích"></span>
-          <span class="reaction-pick-emoji" data-emoji="😂" title="Haha"><img src="../assets/zalo-icons/Smile_24_emoji.svg" alt="Haha"></span>
-          <span class="reaction-pick-emoji" data-emoji="😮" title="Wow"><img src="../assets/zalo-icons/Surprised_24_emoji.svg" alt="Wow"></span>
-          <span class="reaction-pick-emoji" data-emoji="😢" title="Buồn"><img src="../assets/zalo-icons/Cry_24_emoji.svg" alt="Khóc"></span>
-          <span class="reaction-pick-emoji" data-emoji="😡" title="Phẫn nộ"><img src="../assets/zalo-icons/Rage_24_emoji.svg" alt="Giận"></span>
+        <div class="reaction-action">
+          <button type="button" class="msg-action-btn reaction-trigger" title="Bấm để thả Like, rê chuột để chọn cảm xúc" aria-label="Thả Like hoặc chọn cảm xúc"><img src="../assets/zalo-icons/Like_24_emoji.svg" alt=""></button>
+          <div class="reaction-picker-menu" aria-label="Chọn cảm xúc">
+            <button type="button" class="reaction-pick-emoji" data-emoji="❤️" title="Thả tim"><img src="../assets/zalo-icons/Heart_24_emoji.svg" alt="Tim"></button>
+            <button type="button" class="reaction-pick-emoji" data-emoji="👍" title="Thích"><img src="../assets/zalo-icons/Like_24_emoji.svg" alt="Thích"></button>
+            <button type="button" class="reaction-pick-emoji" data-emoji="😂" title="Haha"><img src="../assets/zalo-icons/Smile_24_emoji.svg" alt="Haha"></button>
+            <button type="button" class="reaction-pick-emoji" data-emoji="😮" title="Wow"><img src="../assets/zalo-icons/Surprised_24_emoji.svg" alt="Wow"></button>
+            <button type="button" class="reaction-pick-emoji" data-emoji="😢" title="Buồn"><img src="../assets/zalo-icons/Cry_24_emoji.svg" alt="Khóc"></button>
+            <button type="button" class="reaction-pick-emoji" data-emoji="😡" title="Phẫn nộ"><img src="../assets/zalo-icons/Rage_24_emoji.svg" alt="Giận"></button>
+          </div>
         </div>
         <button class="msg-action-btn btn-reply" title="Trả lời / Trích dẫn">↩️</button>
         ${isSelf ? '<button class="msg-action-btn btn-undo" title="Thu hồi tin nhắn">🚫</button>' : ''}
@@ -1666,7 +2156,7 @@ function renderActiveChatThread(threads) {
     // Bắt sự kiện xem ảnh lớn trong Lightbox Modal
     const imgWrap = row.querySelector('.chat-msg-img-wrap');
     if (imgWrap) {
-      imgWrap.addEventListener('click', () => {
+      imgWrap.querySelector('.chat-msg-image-surface')?.addEventListener('click', () => {
         const imgSrc = imgWrap.getAttribute('data-img-src');
         if (imgSrc && typeof openLightbox === 'function') {
           openLightbox(imgSrc);
@@ -1675,25 +2165,37 @@ function renderActiveChatThread(threads) {
     }
 
     // 1. Bắt sự kiện Reaction
+    const sendMessageReaction = async (emoji, button) => {
+      if (!window.electronAPI?.sendReaction || button.disabled) return;
+      button.disabled = true;
+      try {
+        const result = await window.electronAPI.sendReaction(currentThread.threadId, msg.id, msg.cliMsgId, emoji, currentThread.isGroup);
+        if (!result?.success) throw new Error(result?.error || 'Zalo từ chối thả cảm xúc');
+        if (!msg.reactions) msg.reactions = [];
+        const myUid = 'me';
+        const exIdx = msg.reactions.findIndex(r => r.senderId === myUid);
+        if (exIdx >= 0) msg.reactions[exIdx].icon = emoji;
+        else msg.reactions.push({ icon: emoji, senderId: myUid, senderName: 'Bạn (Tôi)' });
+        renderActiveChatThread(threads);
+        showToast(`Đã thả ${emoji}`, 'info');
+      } catch (err) {
+        showToast('Lỗi thả reaction: ' + err.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    };
+
+    const reactionTrigger = row.querySelector('.reaction-trigger');
+    if (reactionTrigger) reactionTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sendMessageReaction('👍', reactionTrigger);
+    });
+
     const emojiBtns = row.querySelectorAll('.reaction-pick-emoji');
     emojiBtns.forEach(btn => {
-      btn.addEventListener('click', async (e) => {
+      btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const emoji = btn.getAttribute('data-emoji');
-        if (window.electronAPI && window.electronAPI.sendReaction) {
-          try {
-            await window.electronAPI.sendReaction(currentThread.threadId, msg.id, msg.cliMsgId, emoji, currentThread.isGroup);
-            if (!msg.reactions) msg.reactions = [];
-            const myUid = 'me';
-            const exIdx = msg.reactions.findIndex(r => r.senderId === myUid);
-            if (exIdx >= 0) msg.reactions[exIdx].icon = emoji;
-            else msg.reactions.push({ icon: emoji, senderId: myUid, senderName: 'Bạn (Tôi)' });
-            renderActiveChatThread(threads);
-            showToast(`Đã thả ${emoji}`, 'info');
-          } catch (err) {
-            showToast('Lỗi thả reaction: ' + err.message, 'error');
-          }
-        }
+        sendMessageReaction(btn.getAttribute('data-emoji'), btn);
       });
     });
 
@@ -1785,11 +2287,27 @@ function renderActiveChatThread(threads) {
     });
 
     chatMessagesScroll.appendChild(row);
+    const linkCard = row.querySelector('.chat-link-card');
+    if (linkCard && !(msg.linkPreview?.title && msg.linkPreview?.image && msg.linkPreview?.description)) {
+      if (!linkPreviewObserver && typeof IntersectionObserver !== 'undefined') {
+        linkPreviewObserver = new IntersectionObserver(entries => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            linkPreviewObserver.unobserve(entry.target);
+            loadLinkPreviewCard(entry.target, entry.target.linkMessage);
+          }
+        }, { root: chatMessagesScroll, rootMargin: '180px' });
+      }
+      linkCard.linkMessage = msg;
+      if (linkPreviewObserver) linkPreviewObserver.observe(linkCard);
+      else loadLinkPreviewCard(linkCard, msg);
+    }
   });
 
   // Tự động cuộn xuống cuối cùng
   requestAnimationFrame(() => {
-    chatMessagesScroll.scrollTop = chatMessagesScroll.scrollHeight;
+    if (focusIndex >= 0) scrollToAndHighlightMessage(messageFocusId);
+    else chatMessagesScroll.scrollTop = chatMessagesScroll.scrollHeight;
   });
 }
 
@@ -1798,12 +2316,20 @@ if (filterBtns && filterBtns.length > 0) {
   filterBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       filterBtns.forEach(b => b.classList.remove('active'));
+      pinnedConversationsFilter?.classList.remove('active');
       btn.classList.add('active');
       currentFilter = btn.getAttribute('data-filter') || 'all';
       renderDashboardFeed();
     });
   });
 }
+
+pinnedConversationsFilter?.addEventListener('click', () => {
+  filterBtns?.forEach(btn => btn.classList.remove('active'));
+  currentFilter = 'pinned';
+  pinnedConversationsFilter.classList.add('active');
+  renderDashboardFeed();
+});
 
 // Nút làm mới danh sách Nhóm Zalo từ máy chủ Zalo
 if (btnFetchGroups) {
@@ -1860,7 +2386,7 @@ if (btnAttachFile) {
           attachPreviewName.textContent = fileName;
           chatAttachPreview.style.display = 'flex';
         }
-        showToast('🔒 Theo quy tắc an toàn: Tệp sẽ chỉ được gửi đến Zalo Mr Hoàng (Cloud của tôi).', 'info');
+        showToast(`Đã chọn tệp để gửi vào hội thoại hiện tại: ${fileName}`, 'info');
         if (chatReplyInput) chatReplyInput.focus();
       }
     }
@@ -1880,6 +2406,7 @@ if (btnCancelAttach) {
 // Gửi tin nhắn trả lời trực tiếp trong cuộc hội thoại (hỗ trợ trích dẫn và đính kèm file)
 async function sendChatReply() {
   if (!chatReplyInput || !activeThreadId) return;
+  const destinationId = String(activeThreadId);
   const text = chatReplyInput.value.trim();
   if (!text && !selectedAttachment) return;
 
@@ -1896,7 +2423,7 @@ async function sendChatReply() {
 
   try {
     if (window.electronAPI && window.electronAPI.sendReply) {
-      const res = await window.electronAPI.sendReply(activeThreadId, text, isGroup, quoteToSend, attachToSend);
+      const res = await window.electronAPI.sendReply(destinationId, text, isGroup, quoteToSend, attachToSend);
       if (res && res.success) {
         showToast('Đã gửi tin nhắn thành công!', 'success');
         
@@ -1914,7 +2441,7 @@ async function sendChatReply() {
             id: 'self_' + Date.now(),
             senderName: 'Bạn (Tôi)',
             senderId: 'me',
-            threadId: activeThreadId,
+            threadId: destinationId,
             content: text || (attachToSend ? '[Tệp đính kèm]' : ''),
             isGroup: isGroup,
             isSelf: true,
@@ -1924,10 +2451,12 @@ async function sendChatReply() {
           addMessageToDashboard(myMsg, false);
         }
       } else {
+        if (String(activeThreadId) === destinationId) chatReplyInput.value = text;
         showToast('Không thể gửi tin: ' + (res?.error || 'Lỗi Zalo'), 'error');
       }
     }
   } catch (err) {
+    if (String(activeThreadId) === destinationId) chatReplyInput.value = text;
     showToast('Lỗi gửi tin: ' + err.message, 'error');
   } finally {
     chatReplyInput.disabled = false;
@@ -2045,27 +2574,15 @@ function stopSyncElapsedTime() {
 function openSyncModal() {
   if (!syncModalOverlay) return;
   syncModalOverlay.classList.add('active');
-  syncRemainingSeconds = 60;
   stopSyncElapsedTime();
   if (btnCancelSyncModal) {
-    btnCancelSyncModal.textContent = 'Đóng / Hủy bỏ';
+    btnCancelSyncModal.textContent = 'Đóng';
     btnCancelSyncModal.classList.remove('btn-done');
   }
-  updateSyncModalStep(1, 25, '📱', 'Đang chờ xác nhận trên điện thoại...', 'Vui lòng mở ứng dụng <strong>Zalo trên điện thoại</strong> của bạn và bấm chọn <strong>"ĐỒNG BỘ NGAY"</strong>.');
-
+  updateSyncModalStep(1, 10, '📱', 'Đang gửi yêu cầu tới điện thoại...', 'Ứng dụng đang chờ máy chủ Zalo chấp nhận yêu cầu đồng bộ.');
   if (syncCountdownInterval) clearInterval(syncCountdownInterval);
-  syncCountdownInterval = setInterval(() => {
-    syncRemainingSeconds--;
-    if (syncTimerLabel) {
-      syncTimerLabel.textContent = `Thời gian chờ xác nhận còn lại: ${syncRemainingSeconds}s`;
-    }
-    if (syncRemainingSeconds <= 0) {
-      clearInterval(syncCountdownInterval);
-      syncCountdownInterval = null;
-      closeSyncModal();
-      showToast('Hết thời gian chờ xác nhận trên điện thoại.', 'warning');
-    }
-  }, 1000);
+  syncCountdownInterval = null;
+  startSyncElapsedTime();
 }
 
 function closeSyncModal() {
@@ -2100,8 +2617,74 @@ if (window.electronAPI && window.electronAPI.onSyncStatus) {
   window.electronAPI.onSyncStatus(async (status) => {
     console.log('Sync status event:', status);
 
-    if (status.phase === 'waiting_phone') {
-      openSyncModal();
+    if (status.phase === 'startup_scanning') {
+      const button = document.getElementById('btn-quick-sync-cloud');
+      if (button) button.disabled = true;
+      const icon = document.getElementById('quick-sync-icon');
+      const label = document.getElementById('quick-sync-text');
+      const autoCheck = document.getElementById('stat-auto-check-time');
+      if (icon) icon.textContent = '⏳';
+      if (label) label.textContent = 'Đang đồng bộ...';
+      if (autoCheck) autoCheck.textContent = 'Đang đồng bộ nhanh khi khởi động';
+    } else if (['startup_completed', 'startup_failed', 'startup_deferred'].includes(status.phase)) {
+      const button = document.getElementById('btn-quick-sync-cloud');
+      if (button) button.disabled = false;
+      const icon = document.getElementById('quick-sync-icon');
+      const label = document.getElementById('quick-sync-text');
+      if (icon) icon.textContent = '⚡';
+      if (label) label.textContent = 'Đồng bộ nhanh';
+      const autoCheck = document.getElementById('stat-auto-check-time');
+      if (autoCheck) autoCheck.textContent = status.phase === 'startup_completed'
+        ? `${new Date().toLocaleTimeString('vi-VN')} • +${Number(status.added || 0)} tin`
+        : status.message || 'Đang chờ kết nối';
+      if (status.phase === 'startup_completed' && status.added > 0) {
+        await refreshConversationHeads();
+        showToast(status.message, 'success');
+      } else if (status.phase === 'startup_failed') {
+        showToast(status.message || 'Chưa thể đồng bộ nhanh khi khởi động', 'warning');
+      }
+    } else if (status.phase === 'identities_updated') {
+      await loadGroupsData(false);
+      messagesHistory = [];
+      threadHistoryLoaded.clear();
+      threadHistoryExhausted.clear();
+      await refreshConversationHeads();
+    } else if (status.phase === 'requesting_phone') {
+      updateSyncModalStep(1, 10, '📱', status.title || 'Đang gửi yêu cầu tới điện thoại', status.message || 'Đang chờ máy chủ Zalo.');
+    } else if (status.phase === 'scanning') {
+      if (!syncModalOverlay?.classList.contains('active')) openSyncModal();
+      updateSyncModalStep(2, status.progress || 40, '📥', status.title || 'Đang tải lịch sử tin nhắn', status.message || 'Đang nhận tin nhắn từ Zalo.');
+    } else if (status.phase === 'failed') {
+      stopSyncElapsedTime();
+      updateSyncModalStep(1, 0, '⚠️', status.title || 'Không thể đồng bộ', status.message || 'Kết nối Zalo chưa sẵn sàng.');
+      showToast(status.message || 'Không thể đồng bộ tin nhắn', 'error');
+    } else if (status.phase === 'partial') {
+      stopSyncElapsedTime();
+      threadHistoryLoaded.clear();
+      threadHistoryExhausted.clear();
+      if (syncTimerLabel) syncTimerLabel.textContent = '⚠️ Điện thoại đã sao lưu xong; ứng dụng chưa nhập được bản sao lưu.';
+      updateSyncModalStep(3, status.progress ?? 0, '⚠️', status.title || 'Đồng bộ điện thoại chưa hoàn tất', status.message || 'Bản sao lưu điện thoại chưa được nhập.');
+      showToast(status.message || 'Đồng bộ điện thoại chưa hoàn tất.', 'warning');
+      await refreshConversationHeads();
+    } else if (status.phase === 'waiting_phone') {
+      if (!syncModalOverlay?.classList.contains('active')) openSyncModal();
+      updateSyncModalStep(1, 20, '📱', status.title || 'Máy chủ đã nhận yêu cầu', status.message || 'Đang chờ điện thoại phản hồi.');
+    } else if (status.phase === 'phone_waiting_confirm') {
+      updateSyncModalStep(1, 20, '📱', status.title || 'Điện thoại đã nhận yêu cầu!', status.message || 'Vui lòng mở ứng dụng Zalo trên điện thoại và bấm chọn "ĐỒNG BỘ NGAY".');
+      showToast('📱 Điện thoại Zalo đã nhận yêu cầu! Hãy bấm "ĐỒNG BỘ NGAY".', 'info');
+
+    } else if (status.phase === 'phone_rejected' || status.phase === 'phone_cancelled' || status.phase === 'phone_busy') {
+      if (syncCountdownInterval) {
+        clearInterval(syncCountdownInterval);
+        syncCountdownInterval = null;
+      }
+      stopSyncElapsedTime();
+      if (syncTimerLabel) {
+        syncTimerLabel.textContent = `❌ ${status.title || 'Đồng bộ không thành công'}`;
+      }
+      updateSyncModalStep(1, 0, '⚠️', status.title || 'Đồng bộ bị dừng', status.message || 'Yêu cầu đồng bộ không hoàn tất.');
+      showToast(status.message || 'Đồng bộ không thành công!', 'warning');
+
     } else if (status.phase === 'phone_preparing' || status.phase === 'phone_confirmed') {
       // Dừng bộ đếm ngược xác nhận - chuyển sang đếm thời gian thực
       if (syncCountdownInterval) {
@@ -2123,6 +2706,17 @@ if (window.electronAPI && window.electronAPI.onSyncStatus) {
       }
       updateSyncModalStep(2, status.progress || 50, '📲', status.title || 'Điện thoại đang truyền dữ liệu...', status.message || 'Đang nhận dữ liệu từ điện thoại. Dữ liệu lớn có thể mất vài phút!');
 
+    } else if (['downloading_backup', 'decrypting_backup', 'importing_backup'].includes(status.phase)) {
+      if (!syncModalOverlay?.classList.contains('active')) openSyncModal();
+      if (syncCountdownInterval) {
+        clearInterval(syncCountdownInterval);
+        syncCountdownInterval = null;
+      }
+      const icons = { downloading_backup: '📥', decrypting_backup: '🔓', importing_backup: '💾' };
+      updateSyncModalStep(3, status.progress || 85, icons[status.phase],
+        status.title || 'Đang nhập bản sao lưu điện thoại',
+        status.message || 'Đang xử lý toàn bộ tin nhắn đã sao lưu.');
+
     } else if (status.phase === 'finalizing') {
       if (syncCountdownInterval) {
         clearInterval(syncCountdownInterval);
@@ -2140,25 +2734,20 @@ if (window.electronAPI && window.electronAPI.onSyncStatus) {
         syncCountdownInterval = null;
       }
       stopSyncElapsedTime();
+      threadHistoryLoaded.clear();
+      threadHistoryExhausted.clear();
       if (syncTimerLabel) {
-        syncTimerLabel.textContent = '✅ Đã đồng bộ hoàn tất 100%';
+        syncTimerLabel.textContent = '✅ ' + (status.title || 'Đồng bộ hoàn tất');
       }
       if (btnCancelSyncModal) {
         btnCancelSyncModal.textContent = 'Đóng / Hoàn tất';
         btnCancelSyncModal.classList.add('btn-done');
       }
 
-      updateSyncModalStep(3, 100, '✅', 'Đồng bộ hoàn tất thành công 100%!', status.message || 'Tất cả tin nhắn đã sẵn sàng trên màn hình.');
-      showToast(`🎉 ${status.message || 'Đồng bộ tin nhắn thành công!'}`, 'success');
+      updateSyncModalStep(3, 100, '✅', status.title || 'Đồng bộ hoàn tất!', status.message || 'Tin nhắn đã lưu trên máy sẵn sàng.');
+      showToast(status.message || 'Đồng bộ tin nhắn thành công!', 'success');
 
-      // Tự động nạp tin nhắn mới nhất
-      if (window.electronAPI.getHistoryMessages) {
-        const latest = await window.electronAPI.getHistoryMessages();
-        if (Array.isArray(latest) && latest.length > 0) {
-          latest.forEach(m => addMessageToDashboard(m, true));
-          renderDashboardFeed();
-        }
-      }
+      await refreshConversationHeads();
 
       // Giữ modal trong 4.5 giây để người dùng kịp đọc kết quả hoặc bấm Hoàn tất
       setTimeout(() => {
@@ -2186,6 +2775,7 @@ async function openSyncStatusModal() {
         const statContacts = document.getElementById('stat-total-contacts');
         const statWs = document.getElementById('stat-ws-status');
         const statLastSync = document.getElementById('stat-last-sync-time');
+        const statAutoCheck = document.getElementById('stat-auto-check-time');
 
         if (statMsg) statMsg.textContent = Number(status.totalMessages || messagesHistory.length).toLocaleString('vi-VN');
         if (statSize) statSize.textContent = `${Math.round((status.fileSize || 0) / 1024)} KB`;
@@ -2196,8 +2786,15 @@ async function openSyncStatusModal() {
           statWs.style.color = status.isListenerConnected ? '#34D399' : '#FBBF24';
         }
         if (statLastSync) {
-          const d = status.lastSyncTime ? new Date(status.lastSyncTime) : new Date();
-          statLastSync.textContent = d.toLocaleTimeString('vi-VN') + ' ' + d.toLocaleDateString('vi-VN');
+          const d = status.lastSyncTime ? new Date(status.lastSyncTime) : null;
+          statLastSync.textContent = d
+            ? d.toLocaleTimeString('vi-VN') + ' ' + d.toLocaleDateString('vi-VN')
+            : 'Chưa đồng bộ trong phiên này';
+        }
+        if (statAutoCheck) {
+          statAutoCheck.textContent = status.lastRecentCheckTime
+            ? `${new Date(status.lastRecentCheckTime).toLocaleTimeString('vi-VN')} • +${Number(status.lastRecentAdded || 0)} tin`
+            : 'Đang chờ kết nối';
         }
       }
     } catch (e) {
@@ -2225,31 +2822,14 @@ async function handleQuickSync() {
     btnModalQuickSync.textContent = '⏳ Đang quét tin nhắn...';
   }
 
-  showToast('⚡ Bắt đầu đồng bộ nhanh qua Cloud & Socket...', 'info');
+  showToast('Đang tải lịch sử gần đây qua kết nối Zalo...', 'info');
 
   try {
     if (window.electronAPI && window.electronAPI.quickSyncMessages) {
       const res = await window.electronAPI.quickSyncMessages();
       if (res && res.success) {
-        showToast(`⚡ Đồng bộ nhanh thành công! Đã nạp thêm ${res.added || 0} tin nhắn mới.`, 'success');
-        if (window.electronAPI.getHistoryMessages) {
-          const latest = await window.electronAPI.getHistoryMessages();
-          if (Array.isArray(latest) && latest.length > 0) {
-            const existingIds = new Set(messagesHistory.map(m => m.id));
-            const toAdd = [];
-            latest.forEach(m => {
-              if (m && m.id && !existingIds.has(m.id) && !m.isConversation && !(m.id && m.id.startsWith('conv_'))) {
-                existingIds.add(m.id);
-                toAdd.push(m);
-              }
-            });
-            if (toAdd.length > 0) {
-              messagesHistory.push(...toAdd);
-              messagesHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-              renderDashboardFeed();
-            }
-          }
-        }
+        showToast(`Đã lưu thêm ${res.added || 0} tin nhắn mới.`, 'success');
+        await refreshConversationHeads();
         openSyncStatusModal();
       } else {
         showToast(res?.error || 'Không thể đồng bộ nhanh', 'warning');
@@ -2263,7 +2843,7 @@ async function handleQuickSync() {
     if (btnQuickSync) btnQuickSync.disabled = false;
     if (btnModalQuickSync) {
       btnModalQuickSync.disabled = false;
-      btnModalQuickSync.innerHTML = '<span>⚡ Đồng bộ nhanh tin nhắn gần đây (1-2s)</span>';
+      btnModalQuickSync.innerHTML = '<span>⚡ Đồng bộ nhanh tin nhắn gần đây</span>';
     }
   }
 }
@@ -2469,7 +3049,8 @@ function renderStickerGrid(stickersToRender) {
       try {
         showToast('Đang gửi sticker Zalo...', 'info');
         if (window.electronAPI && window.electronAPI.sendSticker) {
-          await window.electronAPI.sendSticker(activeThreadId, stk, isGroup);
+          const result = await window.electronAPI.sendSticker(activeThreadId, stk, isGroup);
+          if (result?.success === false) throw new Error(result.error || 'Gửi sticker thất bại');
           showToast('Đã gửi sticker Zalo thành công! 🎉', 'success');
           if (emojiPickerContainer) emojiPickerContainer.style.display = 'none';
         }
@@ -2657,7 +3238,7 @@ function initEmojiAndStickers() {
             attachPreviewName.textContent = '🖼️ ' + fileName;
             chatAttachPreview.style.display = 'flex';
           }
-          showToast('🔒 Tệp hình ảnh đã chọn. Sẵn sàng gửi an toàn tới Zalo Mr Hoàng.', 'info');
+          showToast(`Đã chọn ảnh để gửi vào hội thoại hiện tại: ${fileName}`, 'info');
           if (chatReplyInput) chatReplyInput.focus();
         }
       }
@@ -2681,31 +3262,65 @@ if (btnToggleMuteChat) {
 
     const strId = String(activeThreadId);
     const nextMuted = !mutedThreadIds.has(strId);
-    if (nextMuted) {
-      mutedThreadIds.add(strId);
-      showToast(`Đã tắt thông báo "${currentThread.senderName}". Sẽ không phát âm thanh khi có tin nhắn đến. 🔕`, 'info');
-    } else {
-      mutedThreadIds.delete(strId);
-      showToast(`Đã bật lại thông báo cho "${currentThread.senderName}". 🔔`, 'success');
+    try {
+      const result = await window.electronAPI.setThreadMute(strId, nextMuted, currentThread.isGroup, -1);
+      if (!result?.success) throw new Error(result?.error || 'Zalo từ chối cập nhật');
+      if (nextMuted) mutedThreadIds.add(strId);
+      else mutedThreadIds.delete(strId);
+      showToast(nextMuted ? `Đã tắt thông báo "${currentThread.senderName}"` : `Đã bật thông báo "${currentThread.senderName}"`, 'success');
+      renderDashboardFeed();
+    } catch (err) {
+      showToast(`Không thể đổi thông báo: ${err.message}`, 'error');
     }
-
-    if (window.electronAPI && window.electronAPI.setThreadMute) {
-      try {
-        await window.electronAPI.setThreadMute(strId, nextMuted, currentThread.isGroup, -1);
-      } catch (err) {
-        console.warn('Lỗi setThreadMute:', err);
-      }
-    }
-
-    renderDashboardFeed();
   });
 }
 
 // ============================================================
 // TÍNH NĂNG BẢNG THÔNG TIN HỘI THOẠI (ẢNH, VIDEO, FILE, LINK)
 // ============================================================
-let currentInfoTab = 'media'; // 'media' | 'files' | 'links' | 'members'
+let currentInfoTab = 'media'; // 'media' | 'files' | 'links' | 'members' | 'board'
 let isInfoPanelOpen = false;
+const conversationToolsCache = new Map();
+
+async function renderConversationTools(container, thread) {
+  const threadId = String(thread.threadId);
+  const cached = conversationToolsCache.get(threadId);
+  let tools = cached && Date.now() - cached.time < 30000 ? cached.data : null;
+  try {
+    if (!tools) {
+      tools = await window.electronAPI.getConversationTools(threadId, thread.isGroup);
+      conversationToolsCache.set(threadId, { time: Date.now(), data: tools });
+    }
+    if (!container.isConnected || String(activeThreadId) !== threadId) return;
+    container.replaceChildren();
+    const entries = [
+      ...(tools.boards || []).map(item => ({
+        title: item.data?.question || item.data?.params?.title || 'Mục bảng nhóm',
+        detail: item.boardType === 3 ? `Bình chọn • ${item.data?.num_vote || 0} lượt` : item.boardType === 1 ? 'Ghi chú nhóm' : 'Tin nhắn đã ghim'
+      })),
+      ...(tools.reminders || []).map(item => ({
+        title: item.params?.title || 'Nhắc hẹn',
+        detail: item.startTime ? `Nhắc hẹn • ${new Date(Number(item.startTime) < 1e12 ? Number(item.startTime) * 1000 : Number(item.startTime)).toLocaleString('vi-VN')}` : 'Nhắc hẹn'
+      }))
+    ];
+    if (!entries.length) {
+      container.textContent = 'Chưa có bình chọn, ghi chú hoặc nhắc hẹn trong hội thoại này.';
+      return;
+    }
+    for (const entry of entries) {
+      const card = document.createElement('div');
+      card.className = 'conversation-tool-item';
+      const title = document.createElement('strong');
+      title.textContent = entry.title;
+      const detail = document.createElement('small');
+      detail.textContent = entry.detail;
+      card.append(title, detail);
+      container.appendChild(card);
+    }
+  } catch (error) {
+    if (container.isConnected) container.textContent = `Không thể tải bảng hội thoại: ${error.message}`;
+  }
+}
 
 function toggleConversationInfoPanel(forceState = null) {
   if (!chatInfoPanel) return;
@@ -2938,6 +3553,8 @@ function renderConversationInfoPanel() {
         `).join('')}
       </div>
     `;
+  } else if (currentInfoTab === 'board') {
+    bodyContentHtml = '<div id="conversation-tools-list" class="conversation-tools-list" role="status">Đang tải bảng hội thoại...</div>';
   }
 
   const isThreadMuted = mutedThreadIds.has(String(currentThread.threadId));
@@ -2984,6 +3601,9 @@ function renderConversationInfoPanel() {
         <span>👥 Thành viên</span>
       </button>
       ` : ''}
+      <button class="info-tab-btn ${currentInfoTab === 'board' ? 'active' : ''}" data-infotab="board">
+        <span>Bảng & nhắc hẹn</span>
+      </button>
     </div>
 
     <!-- 3. Nội dung Tab -->
@@ -2992,6 +3612,10 @@ function renderConversationInfoPanel() {
     </div>
   `;
 
+  if (currentInfoTab === 'board') {
+    renderConversationTools(chatInfoBody.querySelector('#conversation-tools-list'), currentThread);
+  }
+
   // Bắt sự kiện bấm nút Mute trong Info Panel
   const infoBtnMute = document.getElementById('info-btn-mute');
   if (infoBtnMute) {
@@ -2999,7 +3623,8 @@ function renderConversationInfoPanel() {
       const targetState = !isThreadMuted;
       if (window.electronAPI && window.electronAPI.setThreadMute) {
         try {
-          await window.electronAPI.setThreadMute(currentThread.threadId, targetState);
+          const result = await window.electronAPI.setThreadMute(currentThread.threadId, targetState, currentThread.isGroup, -1);
+          if (!result?.success) throw new Error(result?.error || 'Zalo từ chối cập nhật');
           if (targetState) {
             mutedThreadIds.add(String(currentThread.threadId));
             showToast(`Đã tắt thông báo "${currentThread.senderName}".`, 'info');
@@ -3021,9 +3646,10 @@ function renderConversationInfoPanel() {
   if (infoBtnPin) {
     infoBtnPin.addEventListener('click', async () => {
       const targetState = !isThreadPinned;
-      if (window.electronAPI && window.electronAPI.setThreadPin) {
+      if (window.electronAPI && window.electronAPI.setPinnedConversation) {
         try {
-          await window.electronAPI.setThreadPin(currentThread.threadId, targetState);
+          const result = await window.electronAPI.setPinnedConversation(currentThread.threadId, targetState, currentThread.isGroup);
+          if (!result?.success) throw new Error(result?.error || 'Zalo từ chối cập nhật');
           if (targetState) {
             pinnedThreadIds.add(String(currentThread.threadId));
             showToast(`Đã ghim hội thoại "${currentThread.senderName}".`, 'success');
@@ -3116,6 +3742,7 @@ if (btnCloseInfoPanel) {
 // ============================================================
 let ctxCurrentMsg = null;
 let ctxCurrentThread = null;
+let ctxSelectedText = '';
 
 function showChatContextMenu(e, msg, thread) {
   if (!chatContextMenu) return;
@@ -3132,6 +3759,10 @@ function showChatContextMenu(e, msg, thread) {
 
   ctxCurrentMsg = msg;
   ctxCurrentThread = thread || getGroupedThreads().find(t => String(t.threadId) === String(activeThreadId));
+  const selection = window.getSelection();
+  const messageRow = e.currentTarget;
+  ctxSelectedText = selection && messageRow?.contains(selection.anchorNode) && messageRow.contains(selection.focusNode)
+    ? selection.toString() : '';
 
   // 1. Sao chép liên kết (chỉ hiện khi tin nhắn có đường link URL)
   const hasLink = typeof msg.content === 'string' && /https?:\/\/[^\s]+/i.test(msg.content);
@@ -3184,6 +3815,7 @@ function hideChatContextMenu() {
   }
   ctxCurrentMsg = null;
   ctxCurrentThread = null;
+  ctxSelectedText = '';
 }
 
 // Bắt sự kiện click ra ngoài để ẩn Context Menu
@@ -3205,7 +3837,7 @@ window.addEventListener('resize', hideChatContextMenu);
 if (ctxCopyText) {
   ctxCopyText.addEventListener('click', () => {
     if (ctxCurrentMsg) {
-      const textToCopy = ctxCurrentMsg.content || '';
+      const textToCopy = ctxSelectedText || ctxCurrentMsg.content || '';
       navigator.clipboard.writeText(textToCopy).then(() => {
         showToast('Đã sao chép nội dung tin nhắn', 'success');
       }).catch(() => {
@@ -3382,19 +4014,7 @@ function renderForwardTargetsList(keyword = '') {
   const targets = [];
   const addedIds = new Set();
 
-  // 1. Luôn đưa tài khoản Mr Hoàng (2042301864567047451) lên đầu để an toàn tuyệt đối
-  const SAFE_TEST_UID = '2042301864567047451';
-  const mrHoangFriend = (allFriendsList || []).find(f => String(f.userId) === SAFE_TEST_UID);
-  targets.push({
-    threadId: SAFE_TEST_UID,
-    name: (mrHoangFriend && (mrHoangFriend.displayName || mrHoangFriend.zaloName)) || 'Mr Hoàng',
-    avatar: mrHoangFriend ? mrHoangFriend.avatar : '',
-    isGroup: false,
-    isSafeTest: true
-  });
-  addedIds.add(SAFE_TEST_UID);
-
-  // 2. Tiếp theo là các hội thoại gần đây
+  // Hội thoại gần đây
   threads.forEach(t => {
     const sId = String(t.threadId);
     if (!addedIds.has(sId)) {
@@ -3404,12 +4024,11 @@ function renderForwardTargetsList(keyword = '') {
         name: t.senderName || 'Hội thoại',
         avatar: t.avatar,
         isGroup: !!t.isGroup,
-        isSafeTest: false
       });
     }
   });
 
-  // 3. Bạn bè khác
+  // Bạn bè khác
   if (Array.isArray(allFriendsList)) {
     allFriendsList.forEach(f => {
       const sId = String(f.userId);
@@ -3420,13 +4039,12 @@ function renderForwardTargetsList(keyword = '') {
           name: f.displayName || f.zaloName || f.name || 'Bạn bè Zalo',
           avatar: f.avatar,
           isGroup: false,
-          isSafeTest: false
         });
       }
     });
   }
 
-  // 4. Nhóm khác
+  // Nhóm khác
   if (Array.isArray(allGroupsList)) {
     allGroupsList.forEach(g => {
       const sId = String(g.groupId);
@@ -3437,7 +4055,6 @@ function renderForwardTargetsList(keyword = '') {
           name: g.name || 'Nhóm Zalo',
           avatar: g.avatar,
           isGroup: true,
-          isSafeTest: false
         });
       }
     });
@@ -3475,7 +4092,6 @@ function renderForwardTargetsList(keyword = '') {
       <div class="forward-item-info">
         <div class="forward-item-name">
           ${escapeHTML(item.name)}
-          ${item.isSafeTest ? '<span style="display: inline-block; font-size: 10px; background: #059669; color: #FFF; padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle;">⭐ Thử nghiệm an toàn</span>' : ''}
         </div>
         <div class="forward-item-type">${item.isGroup ? 'Nhóm Zalo' : 'Tin nhắn cá nhân'}</div>
       </div>
@@ -3538,25 +4154,9 @@ if (btnConfirmForward) {
     const targetName = forwardTargetSelected.name;
 
     try {
-      if (forwardSourceMessage.isSticker && forwardSourceMessage.stickerId && window.electronAPI && window.electronAPI.sendSticker) {
-        // Chuyển tiếp sticker
-        await window.electronAPI.sendSticker(targetThreadId, {
-          id: forwardSourceMessage.stickerId,
-          cateId: forwardSourceMessage.stickerCateId || 0
-        }, isGroup);
-      } else {
-        // Chuyển tiếp tin nhắn văn bản, ảnh hoặc file
-        let contentToSend = forwardSourceMessage.content || '';
-        if (forwardSourceMessage.isPhoto && (forwardSourceMessage.photoUrl || forwardSourceMessage.thumbUrl)) {
-          contentToSend = forwardSourceMessage.photoUrl || forwardSourceMessage.thumbUrl || contentToSend;
-        } else if (forwardSourceMessage.isFile && forwardSourceMessage.fileUrl) {
-          contentToSend = `[Tài liệu: ${forwardSourceMessage.fileName || 'Tệp tin'}] ${forwardSourceMessage.fileUrl}`;
-        }
-
-        if (window.electronAPI && window.electronAPI.sendReply) {
-          await window.electronAPI.sendReply(targetThreadId, contentToSend, isGroup);
-        }
-      }
+      if (!window.electronAPI?.forwardTextMessage) throw new Error('Chức năng chuyển tiếp chưa khả dụng');
+      const result = await window.electronAPI.forwardTextMessage(forwardSourceMessage, targetThreadId, isGroup);
+      if (!result?.success) throw new Error(result?.error || 'Chuyển tiếp thất bại');
 
       showToast(`Đã chuyển tiếp tin nhắn tới "${targetName}" thành công!`, 'success');
       closeForwardModal();
@@ -3764,10 +4364,41 @@ document.addEventListener('keydown', (e) => {
 // ============================================================
 const PINNED_STORAGE_KEY = 'nhitzalo_pinned_messages';
 let currentPinnedViewIdx = 0;
+const serverPinnedMessages = new Map();
+
+function getVisiblePinnedMessages(threadId) {
+  return window.pinnedMessages.mergePinnedMessages(
+    getPinnedMessages(threadId), serverPinnedMessages.get(String(threadId))?.items || []
+  );
+}
+
+async function loadServerPinnedMessages(thread) {
+  if (!thread || thread.isCloud || !window.electronAPI?.getConversationTools) return;
+  const threadId = String(thread.threadId);
+  const cached = serverPinnedMessages.get(threadId);
+  if (cached?.pending) return cached.pending;
+  if (cached && Date.now() - cached.time < 30000) return;
+  const pending = window.electronAPI.getConversationTools(threadId, !!thread.isGroup);
+  serverPinnedMessages.set(threadId, { ...cached, pending });
+  try {
+    const result = await pending;
+    serverPinnedMessages.set(threadId, {
+      items: window.pinnedMessages.mergePinnedMessages(
+        window.pinnedMessages.normalizePinnedTopics(result?.pinTopics),
+        [...window.pinnedMessages.normalizePinnedBoards(result?.boards),
+          ...window.pinnedMessages.normalizePinnedFriendBoards(result?.friendBoards)]
+      ), time: Date.now()
+    });
+    if (String(activeThreadId) === threadId) renderPinnedMessageBar(thread);
+  } catch (error) {
+    serverPinnedMessages.delete(threadId);
+    console.warn('Không thể tải tin nhắn ghim từ Zalo:', error);
+  }
+}
 
 function getPinnedMessages(threadId) {
   try {
-    const raw = localStorage.getItem(PINNED_STORAGE_KEY);
+    const raw = accountStorage.getItem(PINNED_STORAGE_KEY);
     const map = raw ? JSON.parse(raw) : {};
     return Array.isArray(map[String(threadId)]) ? map[String(threadId)] : [];
   } catch (e) {
@@ -3777,10 +4408,10 @@ function getPinnedMessages(threadId) {
 
 function savePinnedMessages(threadId, list) {
   try {
-    const raw = localStorage.getItem(PINNED_STORAGE_KEY);
+    const raw = accountStorage.getItem(PINNED_STORAGE_KEY);
     const map = raw ? JSON.parse(raw) : {};
     map[String(threadId)] = list;
-    localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(map));
+    accountStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(map));
   } catch (e) {}
 }
 
@@ -3796,7 +4427,7 @@ function togglePinMessage(msg, threadId) {
     showToast('Đã bỏ ghim tin nhắn này.', 'info');
   } else {
     // Ghim tin nhắn mới
-    let pinContent = msg.content || '';
+    let pinContent = window.CallMessage.describeCallMessage(msg);
     if (msg.isPhoto) pinContent = '[Hình ảnh]';
     else if (msg.isSticker) pinContent = '[Sticker]';
     else if (msg.isFile) pinContent = `[Tệp tin: ${msg.fileName || 'Tài liệu'}]`;
@@ -3823,7 +4454,7 @@ function togglePinMessage(msg, threadId) {
 
 function renderPinnedMessageBar(currentThread) {
   if (!chatPinnedBar || !currentThread) return;
-  const list = getPinnedMessages(currentThread.threadId);
+  const list = getVisiblePinnedMessages(currentThread.threadId);
 
   if (list.length === 0) {
     chatPinnedBar.style.display = 'none';
@@ -3836,6 +4467,7 @@ function renderPinnedMessageBar(currentThread) {
 
   const pin = list[currentPinnedViewIdx];
   chatPinnedBar.style.display = 'flex';
+  if (btnPinnedUnpin) btnPinnedUnpin.style.display = pin.source === 'zalo' ? 'none' : 'inline-block';
 
   if (pinnedBarSender) pinnedBarSender.textContent = `${pin.senderName}:`;
   if (pinnedBarText) pinnedBarText.textContent = pin.content;
@@ -3870,6 +4502,21 @@ function renderPinnedMessageBar(currentThread) {
   }
 }
 
+const btnShowPinned = document.getElementById('btn-show-pinned');
+btnShowPinned?.addEventListener('click', async () => {
+  const thread = getGroupedThreads().find(item => String(item.threadId) === String(activeThreadId));
+  if (!thread) return;
+  await loadServerPinnedMessages(thread);
+  const list = getVisiblePinnedMessages(thread.threadId);
+  if (list.length === 0) {
+    showToast('Chưa có tin nhắn ghim. Nhấp chuột phải vào một tin nhắn rồi chọn Ghim tin nhắn.', 'info');
+    return;
+  }
+  currentPinnedViewIdx = 0;
+  renderPinnedMessageBar(thread);
+  chatPinnedBar?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
+
 function scrollToAndHighlightMessage(msgId) {
   if (!chatMessagesScroll) return;
   const rows = chatMessagesScroll.querySelectorAll('.chat-msg-row');
@@ -3888,7 +4535,7 @@ function scrollToAndHighlightMessage(msgId) {
 if (btnPinnedPrev) {
   btnPinnedPrev.addEventListener('click', () => {
     if (!activeThreadId) return;
-    const list = getPinnedMessages(activeThreadId);
+    const list = getVisiblePinnedMessages(activeThreadId);
     if (list.length > 0) {
       currentPinnedViewIdx = (currentPinnedViewIdx - 1 + list.length) % list.length;
       const currentThread = getGroupedThreads().find(t => String(t.threadId) === String(activeThreadId));
@@ -3900,7 +4547,7 @@ if (btnPinnedPrev) {
 if (btnPinnedNext) {
   btnPinnedNext.addEventListener('click', () => {
     if (!activeThreadId) return;
-    const list = getPinnedMessages(activeThreadId);
+    const list = getVisiblePinnedMessages(activeThreadId);
     if (list.length > 0) {
       currentPinnedViewIdx = (currentPinnedViewIdx + 1) % list.length;
       const currentThread = getGroupedThreads().find(t => String(t.threadId) === String(activeThreadId));
@@ -3972,19 +4619,18 @@ if (ctxConvPin) {
       const thread = ctxConvCurrentThread;
       const isPinned = pinnedThreadIds.has(String(thread.threadId));
       const nextPinned = !isPinned;
-      if (nextPinned) {
-        pinnedThreadIds.add(String(thread.threadId));
-        showToast(`Đã ghim "${thread.senderName}" lên đầu danh sách`, 'info');
-      } else {
-        pinnedThreadIds.delete(String(thread.threadId));
-        showToast(`Đã bỏ ghim "${thread.senderName}"`, 'info');
+      hideConvContextMenu();
+      try {
+        const result = await window.electronAPI.setPinnedConversation(thread.threadId, nextPinned, thread.isGroup);
+        if (!result?.success) throw new Error(result?.error || 'Zalo từ chối cập nhật');
+        if (nextPinned) pinnedThreadIds.add(String(thread.threadId));
+        else pinnedThreadIds.delete(String(thread.threadId));
+        showToast(nextPinned ? `Đã ghim "${thread.senderName}" lên đầu danh sách`
+          : `Đã bỏ ghim "${thread.senderName}"`, 'success');
+        renderDashboardFeed();
+      } catch (error) {
+        showToast(`Không thể đổi trạng thái ghim: ${error.message}`, 'error');
       }
-      if (window.electronAPI && window.electronAPI.setPinnedConversation) {
-        try {
-          await window.electronAPI.setPinnedConversation(thread.threadId, nextPinned, thread.isGroup);
-        } catch (err) {}
-      }
-      renderDashboardFeed();
     }
     hideConvContextMenu();
   });
@@ -4021,11 +4667,11 @@ if (ctxConvUnread) {
     if (ctxConvCurrentThread) {
       const thread = ctxConvCurrentThread;
       try {
-        const raw = localStorage.getItem('nhitzalo_read_thread_timestamps');
+        const raw = accountStorage.getItem('nhitzalo_read_thread_timestamps');
         const map = raw ? JSON.parse(raw) : {};
         // Xóa thời điểm đã xem để khôi phục lại badge chưa đọc
         delete map[String(thread.threadId)];
-        localStorage.setItem('nhitzalo_read_thread_timestamps', JSON.stringify(map));
+        accountStorage.setItem('nhitzalo_read_thread_timestamps', JSON.stringify(map));
         showToast(`Đã đánh dấu "${thread.senderName}" là chưa đọc`, 'success');
         renderDashboardFeed();
       } catch (err) {}
@@ -4270,15 +4916,15 @@ if (btnConfirmPoll) {
     const isAnon = pollAnonymous ? pollAnonymous.checked : false;
 
     try {
-      if (window.electronAPI && window.electronAPI.createGroupPoll) {
-        await window.electronAPI.createGroupPoll(activeThreadId, {
-          question,
-          options: validOptions,
-          allowMultiChoices: isMulti,
-          allowAddNewOption: true,
-          isAnonymous: isAnon
-        });
-      }
+      if (!window.electronAPI?.createGroupPoll) throw new Error('API tạo bình chọn không khả dụng');
+      const result = await window.electronAPI.createGroupPoll(activeThreadId, {
+        question,
+        options: validOptions,
+        allowMultiChoices: isMulti,
+        allowAddNewOption: true,
+        isAnonymous: isAnon
+      });
+      if (result?.success === false) throw new Error(result.error || 'Tạo bình chọn thất bại');
 
       // Tạo message cục bộ hiển thị ngay trong chat
       const pollMsg = {
@@ -4302,6 +4948,7 @@ if (btnConfirmPoll) {
       };
 
       addMessageToDashboard(pollMsg, false);
+      conversationToolsCache.delete(String(activeThreadId));
       showToast('Đã tạo bình chọn thành công!', 'success');
       closePollModal();
     } catch (err) {
@@ -4425,13 +5072,13 @@ if (btnConfirmReminder) {
     const isGroup = currentThread ? currentThread.isGroup : false;
 
     try {
-      if (window.electronAPI && window.electronAPI.createGroupReminder) {
-        await window.electronAPI.createGroupReminder(activeThreadId, {
-          title,
-          startTime: dateObj.getTime(),
-          emoji: selectedReminderEmoji
-        }, isGroup);
-      }
+      if (!window.electronAPI?.createGroupReminder) throw new Error('API tạo nhắc hẹn không khả dụng');
+      const result = await window.electronAPI.createGroupReminder(activeThreadId, {
+        title,
+        startTime: dateObj.getTime(),
+        emoji: selectedReminderEmoji
+      }, isGroup);
+      if (result?.success === false) throw new Error(result.error || 'Tạo nhắc hẹn thất bại');
 
       // Thêm message Reminder vào timeline chat
       const reminderMsg = {
@@ -4455,6 +5102,7 @@ if (btnConfirmReminder) {
       };
 
       addMessageToDashboard(reminderMsg, false);
+      conversationToolsCache.delete(String(activeThreadId));
       showToast('Đã tạo lịch nhắc hẹn thành công!', 'success');
       closeReminderModal();
     } catch (err) {
@@ -4503,6 +5151,96 @@ function closeProfileModal() {
   profileCurrentTarget = null;
 }
 
+// Tìm kiếm trong toàn bộ lịch sử đã lưu trên máy
+const globalSearchOverlay = document.getElementById('global-search-overlay');
+const globalSearchInput = document.getElementById('global-search-input');
+const globalSearchResults = document.getElementById('global-search-results');
+const globalSearchStatus = document.getElementById('global-search-status');
+const globalSearchMore = document.getElementById('global-search-more');
+let globalSearchOffset = 0;
+let globalSearchRequest = 0;
+let globalSearchTimer = null;
+let globalSearchReturnFocus = null;
+
+function closeGlobalSearch() {
+  if (globalSearchOverlay) globalSearchOverlay.style.display = 'none';
+  globalSearchRequest++;
+  globalSearchReturnFocus?.focus();
+}
+
+async function runGlobalSearch(reset = true) {
+  if (!globalSearchInput || !globalSearchResults || !globalSearchStatus) return;
+  const query = globalSearchInput.value.trim();
+  if (reset) {
+    globalSearchOffset = 0;
+    globalSearchResults.replaceChildren();
+  }
+  globalSearchMore.style.display = 'none';
+  if (query.length < 2) {
+    globalSearchStatus.textContent = 'Nhập ít nhất 2 ký tự để tìm trong tin nhắn đã lưu.';
+    return;
+  }
+  const requestId = ++globalSearchRequest;
+  globalSearchStatus.textContent = 'Đang tìm...';
+  try {
+    const page = await window.electronAPI.searchHistoryMessages(query, 50, globalSearchOffset);
+    if (requestId !== globalSearchRequest || query !== globalSearchInput.value.trim()) return;
+    for (const message of page) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'global-search-result';
+      const name = document.createElement('strong');
+      name.textContent = message.threadName || message.senderName || 'Hội thoại';
+      const when = document.createElement('small');
+      when.textContent = message.timestamp ? new Date(message.timestamp).toLocaleString('vi-VN') : '';
+      const snippet = document.createElement('span');
+      snippet.textContent = message.content || '[Tin nhắn không có văn bản]';
+      item.append(name, when, snippet);
+      item.addEventListener('click', () => {
+        closeGlobalSearch();
+        document.querySelector('[data-tab="tab-messages"]')?.click();
+        activeThreadId = String(message.threadId);
+        messageFocusId = String(message.id);
+        addMessageToDashboard(message, true);
+        renderDashboardFeed();
+        markThreadAsRead(activeThreadId);
+        requestAnimationFrame(() => scrollToAndHighlightMessage(message.id));
+      });
+      globalSearchResults.appendChild(item);
+    }
+    globalSearchOffset += page.length;
+    globalSearchStatus.textContent = globalSearchOffset
+      ? `Đã tìm thấy ${globalSearchOffset} tin nhắn${page.length === 50 ? ' (còn kết quả)' : ''}.`
+      : 'Không có kết quả. Hãy thử từ khóa khác.';
+    globalSearchMore.style.display = page.length === 50 ? 'block' : 'none';
+  } catch (error) {
+    globalSearchStatus.textContent = `Không thể tìm kiếm: ${error.message}`;
+  }
+}
+
+document.getElementById('btn-search-all')?.addEventListener('click', (event) => {
+  globalSearchReturnFocus = event.currentTarget;
+  globalSearchOverlay.style.display = 'flex';
+  globalSearchInput.focus();
+});
+document.getElementById('global-search-close')?.addEventListener('click', closeGlobalSearch);
+globalSearchOverlay?.addEventListener('click', event => {
+  if (event.target === globalSearchOverlay) closeGlobalSearch();
+});
+globalSearchInput?.addEventListener('input', () => {
+  clearTimeout(globalSearchTimer);
+  globalSearchRequest++;
+  globalSearchTimer = setTimeout(() => runGlobalSearch(true), 250);
+});
+globalSearchMore?.addEventListener('click', () => runGlobalSearch(false));
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && globalSearchOverlay?.style.display === 'flex') closeGlobalSearch();
+  if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'f') {
+    event.preventDefault();
+    document.getElementById('btn-search-all')?.click();
+  }
+});
+
 if (btnCloseProfileModal) {
   btnCloseProfileModal.addEventListener('click', closeProfileModal);
 }
@@ -4530,6 +5268,7 @@ if (btnProfileSendMsg) {
       if (uId) {
         activeThreadId = uId;
         renderDashboardFeed();
+        markThreadAsRead(activeThreadId);
         closeProfileModal();
         showToast(`Đã mở cuộc trò chuyện với "${profileDisplayName.textContent}"`, 'info');
       }

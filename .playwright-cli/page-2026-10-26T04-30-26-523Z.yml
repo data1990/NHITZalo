@@ -1,0 +1,5 @@
+- generic [ref=e4]:
+  - generic [ref=e5] [cursor=pointer]:
+    - img "Ảnh Zalo" [ref=e6]
+    - generic [ref=e7]: Xem ảnh
+  - generic [ref=e8]: Đây là lời nhắn kèm theo hình ảnh.Vui lòng kiểm tra thông tin.
