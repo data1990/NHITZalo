@@ -1,0 +1,22 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: Z
+      - generic [ref=e6]:
+        - strong [ref=e7]: NHIT Zalo
+        - generic [ref=e8]: Quản lý phiên đăng nhập
+    - button "Khóa trang quản trị" [ref=e18] [cursor=pointer]
+  - generic [ref=e19]:
+    - generic [ref=e21]:
+      - generic [ref=e22]: TÀI KHOẢN ZALO
+      - heading "Phiên đăng nhập" [level=1] [ref=e23]
+      - paragraph [ref=e24]: Chọn một tài khoản để tạo QR, xem trạng thái hoặc xóa phiên đã lưu.
+    - generic [ref=e25]:
+      - generic [ref=e26]: Tên để nhận biết tài khoản
+      - generic [ref=e27]:
+        - textbox "Tên để nhận biết tài khoản" [ref=e28]:
+          - /placeholder: "Ví dụ: Zalo công việc"
+        - button "+ Thêm tài khoản" [ref=e29] [cursor=pointer]
+    - paragraph [ref=e31]: Chưa có tài khoản. Thêm tài khoản ở phía trên để tạo mã QR đăng nhập.
+    - paragraph [ref=e32]: Mã QR chỉ hiển thị sau khi bạn đăng nhập trang quản trị. Không chia sẻ mã QR hoặc mật khẩu quản trị.
+  - status [ref=e17]: Đã mở trang quản trị

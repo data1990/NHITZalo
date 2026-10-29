@@ -103,6 +103,11 @@
 
         <!-- KHUNG NHẬP TIN NHẮN TRẢ LỜI NHANH Ở DƯỚI CÙNG -->
         <div class="card-footer">
+          <div class="bubble-attach-preview hidden" id="bubble-attach-preview">
+            <img id="bubble-attach-image" alt="Ảnh sẽ gửi">
+            <span>Ảnh đã dán • Bấm Gửi để chuyển đi</span>
+            <button type="button" id="bubble-cancel-attach" title="Hủy ảnh đính kèm" aria-label="Hủy ảnh đính kèm">✕</button>
+          </div>
           <div class="reply-box">
             <input type="text" id="reply-input" placeholder="Nhập tin nhắn..." maxlength="500" autocomplete="off">
             <button id="btn-send-reply" title="Gửi tin nhắn (Enter)">
@@ -124,6 +129,11 @@
   <script src="../../shared/accountStorage.js"></script>
   <script src="bubbleThreadVisibility.js"></script>
   <script src="../dashboard/voiceMessage.js"></script>
+  <script src="../../shared/callMessage.js"></script>
+  <script src="../../shared/mentions.js"></script>
+  <script src="../../shared/unreadMessages.js"></script>
+  <script src="../../shared/deliveryStatus.js"></script>
+  <script src="../../shared/clipboardImage.js"></script>
   <script src="../../shared/photoCaption.js"></script>
   <script src="bubble.js"></script>
 </body>

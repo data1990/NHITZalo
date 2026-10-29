@@ -1,0 +1,15 @@
+- main [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e5]: Z
+    - generic [ref=e6]:
+      - strong [ref=e7]: NHIT Zalo
+      - generic [ref=e8]: Quản lý phiên đăng nhập
+  - generic [ref=e9]:
+    - generic [ref=e10]: QUẢN TRỊ WEB
+    - heading "Đăng nhập để quản lý tài khoản Zalo" [level=1] [ref=e11]
+    - paragraph [ref=e12]: Phiên Zalo được mã hóa trên máy chủ. Bạn sẽ quét mã QR bằng điện thoại để thêm từng tài khoản.
+    - generic [ref=e13]:
+      - generic [ref=e14]: Mật khẩu quản trị
+      - textbox "Mật khẩu quản trị" [ref=e15]
+      - button "Mở trang quản trị" [ref=e16] [cursor=pointer]
+  - status [ref=e17]

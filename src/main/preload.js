@@ -7,7 +7,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkSavedSession: () => ipcRenderer.invoke('zalo-check-session'),
   tryAutoLogin: () => ipcRenderer.invoke('zalo-auto-login'),
   getCurrentAccount: () => ipcRenderer.invoke('account-current'),
+  getHostedSessionStatus: () => ipcRenderer.invoke('hosted-session-status'),
+  checkHostedConnection: origin => ipcRenderer.invoke('hosted-session-check', origin),
+  pairHostedSession: (origin, code) => ipcRenderer.invoke('hosted-session-pair', origin, code),
+  unpairHostedSession: () => ipcRenderer.invoke('hosted-session-unpair'),
+  getWebHostStatus: () => ipcRenderer.invoke('web-host-status'),
+  startWebHost: password => ipcRenderer.invoke('web-host-start', password),
+  stopWebHost: () => ipcRenderer.invoke('web-host-stop'),
+  openWebHost: () => ipcRenderer.invoke('web-host-open'),
   switchAccount: () => ipcRenderer.invoke('account-switch'),
+  lockAccount: () => ipcRenderer.invoke('account-lock'),
+  onLockNeedsPassword: callback => {
+    const subscription = () => callback();
+    ipcRenderer.on('account-lock-needs-password', subscription);
+    return () => ipcRenderer.removeListener('account-lock-needs-password', subscription);
+  },
   changeAccountPassword: (current, next) => ipcRenderer.invoke('account-change-password', current, next),
   onAccountNameUpdated: (callback) => {
     const subscription = (event, name) => callback(name);
@@ -32,6 +46,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getGroupsList: () => ipcRenderer.invoke('zalo-get-groups'),
   fetchGroupsList: () => ipcRenderer.invoke('zalo-fetch-groups'),
   getFriendsList: () => ipcRenderer.invoke('zalo-get-friends'),
+  openContactChat: (uid, name) => ipcRenderer.invoke('open-contact-chat', { uid, name }),
+  onOpenContactChat: callback => {
+    const listener = (_event, contact) => callback(contact);
+    ipcRenderer.on('open-contact-chat', listener);
+    return () => ipcRenderer.removeListener('open-contact-chat', listener);
+  },
   fetchFriendsList: () => ipcRenderer.invoke('zalo-fetch-friends'),
   fetchThreadMessages: (threadId, isGroup) => ipcRenderer.invoke('zalo-fetch-thread-messages', { threadId, isGroup }),
   sendReply: (threadId, content, isGroup, quote, attachments) => ipcRenderer.invoke('zalo-send-reply', { threadId, content, isGroup, quote, attachments }),
@@ -86,6 +106,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('zalo-message-reaction', subscription);
     return () => ipcRenderer.removeListener('zalo-message-reaction', subscription);
   },
+  onDeliveryStatus: callback => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('zalo-delivery-status', listener);
+    return () => ipcRenderer.removeListener('zalo-delivery-status', listener);
+  },
   onPhotoCaptionUpdated: (callback) => {
     const subscription = (event, data) => callback(data);
     ipcRenderer.on('zalo-photo-caption-updated', subscription);
@@ -134,13 +159,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Tải và thao tác tệp tin máy tính
-  downloadFile: (fileUrl, fileName, promptSaveAs = false) => ipcRenderer.invoke('zalo-download-file', { fileUrl, fileName, promptSaveAs }),
+  downloadFile: (fileUrl, fileName, promptSaveAs = false, fileSize = 0) => ipcRenderer.invoke('zalo-download-file', { fileUrl, fileName, promptSaveAs, fileSize }),
+  getFileDownloadSettings: () => ipcRenderer.invoke('zalo-file-download-settings'),
+  setFileDownloadSettings: changes => ipcRenderer.invoke('zalo-file-download-set-settings', changes),
+  chooseFileDownloadDirectory: () => ipcRenderer.invoke('zalo-file-download-choose-directory'),
+  lookupDownloadedFiles: items => ipcRenderer.invoke('zalo-file-lookup', items),
+  onFileDownloadResult: callback => {
+    const subscription = (event, result) => callback(result);
+    ipcRenderer.on('zalo-file-download-result', subscription);
+    return () => ipcRenderer.removeListener('zalo-file-download-result', subscription);
+  },
   openFilePath: (filePath) => ipcRenderer.invoke('open-file-path', filePath),
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
   saveClipboardImage: (base64Data) => ipcRenderer.invoke('save-clipboard-image', base64Data),
 
   // Test tin nhắn mẫu
-  sendTestMessage: (customContent) => ipcRenderer.send('send-test-message', customContent),
 
   // Cửa sổ
   openDashboard: () => ipcRenderer.send('open-dashboard'),

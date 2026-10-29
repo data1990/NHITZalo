@@ -53,6 +53,18 @@ test('file attachment goes to the selected personal conversation', async () => {
   assert.equal(received[0].threadId, '12345');
 });
 
+test('pasted image uses the attachment receipt and appears as an image message placeholder', async () => {
+  const { manager, sent } = createManager();
+  manager.api.sendMessage = async (payload, threadId, type) => {
+    sent.push({ payload, threadId, type });
+    return { message: null, attachment: [{ msgId: 'image-42' }] };
+  };
+  const result = await manager.sendReply('12345', '', false, null, ['C:/tmp/clipboard_img.png']);
+  assert.deepEqual(sent[0].payload.attachments, ['C:/tmp/clipboard_img.png']);
+  assert.equal(result.message.id, 'image-42');
+  assert.equal(result.message.content, '[Hình ảnh đã gửi]');
+});
+
 test('sticker goes to the selected group conversation', async () => {
   const { manager, sent, received } = createManager();
   await manager.sendSticker('67890', { id: 111, cateId: 222 }, true);

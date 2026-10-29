@@ -1,0 +1,27 @@
+[Unit]
+Description=NHIT Zalo Web Host
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=nhitzalo
+Group=nhitzalo
+WorkingDirectory=/opt/nhitzalo
+ExecStart=/usr/bin/node /opt/nhitzalo/src/web/server.js
+Environment=NODE_ENV=production
+Environment=WEB_HOST=127.0.0.1
+Environment=WEB_PORT=3177
+Environment=WEB_PUBLIC_ORIGIN=https://zalo.example.com
+Environment=WEB_DATA_DIR=/var/lib/nhitzalo-web
+LoadCredential=nhitzalo_admin_password:/etc/nhitzalo/web-admin-password
+StateDirectory=nhitzalo-web
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nhitzalo-web
+
+[Install]
+WantedBy=multi-user.target

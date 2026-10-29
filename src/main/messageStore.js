@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { promoteDeliveryStatus } = require('../shared/deliveryStatus');
 
 class MessageStore {
   constructor(dbPath, legacyPath) {
@@ -146,6 +147,14 @@ class MessageStore {
 
   put(message) {
     if (!message || !message.id || !message.threadId) return;
+    if (message.isSelf) {
+      const prior = this.db.prepare('SELECT body FROM messages WHERE thread_id = ? AND message_id = ?')
+        .get(String(message.threadId), String(message.id));
+      if (prior) {
+        const savedStatus = JSON.parse(prior.body).deliveryStatus;
+        message.deliveryStatus = promoteDeliveryStatus(savedStatus, message.deliveryStatus);
+      }
+    }
     this.insert.run(
       String(message.threadId), String(message.id), message.cliMsgId == null ? null : String(message.cliMsgId),
       Math.trunc(Number(message.timestamp) || 0), String(message.content || ''), String(message.senderName || ''),
@@ -162,6 +171,35 @@ class MessageStore {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  updateDeliveryStatus(threadId, messageIds, isGroup, status) {
+    const raw = String(threadId || '');
+    const clean = raw.replace(/^g_/, '');
+    const canonical = this.identityByPlain.get(clean)?.noisedId || clean;
+    const threads = new Set([raw, clean, canonical]);
+    if (isGroup) threads.add(`g_${canonical}`);
+    for (const alias of this.identityByNoised.get(canonical) || []) {
+      threads.add(alias.plainId);
+      if (isGroup) threads.add(`g_${alias.plainId}`);
+    }
+    const byId = this.db.prepare('SELECT thread_id, message_id, body FROM messages WHERE thread_id = ? AND message_id = ?');
+    const byCli = this.db.prepare('SELECT thread_id, message_id, body FROM messages WHERE thread_id = ? AND cli_message_id = ? LIMIT 1');
+    const update = this.db.prepare('UPDATE messages SET body = ? WHERE thread_id = ? AND message_id = ?');
+    for (const tid of threads) {
+      for (const messageId of messageIds) {
+        const row = byId.get(tid, String(messageId)) || byCli.get(tid, String(messageId));
+        if (!row) continue;
+        const message = JSON.parse(row.body);
+        if (!message.isSelf || !!message.isGroup !== !!isGroup) continue;
+        const promoted = promoteDeliveryStatus(message.deliveryStatus, status);
+        if (promoted === message.deliveryStatus) return null;
+        message.deliveryStatus = promoted;
+        update.run(JSON.stringify(message), row.thread_id, row.message_id);
+        return message;
+      }
+    }
+    return null;
   }
 
   getRecent(limit = 5000, offset = 0) {

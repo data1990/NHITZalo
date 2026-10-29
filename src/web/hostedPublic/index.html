@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NHIT Zalo · Quản lý phiên</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">Z</span><div><strong>NHIT Zalo</strong><small>Quản lý phiên đăng nhập</small></div></div>
+      <button id="logout" class="button ghost" type="button" hidden>Đăng xuất</button>
+    </header>
+
+    <section id="login-view" class="login-panel">
+      <div class="eyebrow">NHIT ZALO WEB</div>
+      <h1>Đăng nhập</h1>
+      <p>Tài khoản mới cần được quản trị viên duyệt trước khi sử dụng.</p>
+      <form id="login-form">
+        <label for="username">Tên đăng nhập</label>
+        <input id="username" type="text" autocomplete="username" required>
+        <label for="password">Mật khẩu</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <button class="button primary" type="submit">Đăng nhập</button>
+      </form>
+      <button id="show-register" class="button ghost" type="button">Đăng ký tài khoản</button>
+    </section>
+
+    <section id="register-view" class="login-panel" hidden>
+      <div class="eyebrow">ĐĂNG KÝ</div>
+      <h1>Tạo tài khoản</h1>
+      <p>Sau khi đăng ký, hãy chờ quản trị viên duyệt tài khoản.</p>
+      <form id="register-form">
+        <label for="register-username">Tên đăng nhập</label>
+        <input id="register-username" type="text" minlength="3" maxlength="40" autocomplete="username" required>
+        <label for="register-password">Mật khẩu (ít nhất 12 ký tự)</label>
+        <input id="register-password" type="password" minlength="12" autocomplete="new-password" required>
+        <button class="button primary" type="submit">Gửi đăng ký</button>
+      </form>
+      <button id="show-login" class="button ghost" type="button">Quay lại đăng nhập</button>
+    </section>
+
+    <section id="dashboard-view" hidden>
+      <div class="page-intro"><div><div class="eyebrow">TÀI KHOẢN ZALO</div><h1>Phiên đăng nhập</h1><p id="welcome"></p><p>Mỗi người chỉ xem và quản lý tài khoản Zalo của mình.</p></div></div>
+      <section id="admin-panel" class="add-form" hidden>
+        <h2>Người dùng chờ duyệt</h2>
+        <div id="pending-users"></div>
+      </section>
+      <form id="add-form" class="add-form">
+        <label for="account-label">Tên để nhận biết tài khoản</label>
+        <div class="add-row"><input id="account-label" type="text" maxlength="80" placeholder="Ví dụ: Zalo công việc" required><button class="button primary" type="submit">+ Thêm tài khoản</button></div>
+      </form>
+      <div id="account-list" class="account-grid" aria-live="polite"></div>
+      <p class="footnote">Mã QR chỉ hiển thị sau khi bạn đăng nhập trang quản trị. Không chia sẻ mã QR hoặc mật khẩu quản trị.</p>
+    </section>
+    <p id="notice" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>

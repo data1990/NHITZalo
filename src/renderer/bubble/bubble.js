@@ -1,4 +1,5 @@
 // Web Audio Notification Chime (Chime âm thanh thông báo du dương)
+let bubbleMentionFriends = [];
 function playNotificationSound() {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -116,6 +117,15 @@ const bubbleCopyMenu = document.getElementById('bubble-copy-menu');
 let bubbleCopyText = '';
 const emptyState = document.getElementById('empty-state');
 const replyInput = document.getElementById('reply-input');
+const bubbleAttachPreview = document.getElementById('bubble-attach-preview');
+const bubbleAttachImage = document.getElementById('bubble-attach-image');
+let bubbleAttachment = null;
+function clearBubbleAttachment() {
+  bubbleAttachment = null;
+  bubbleAttachImage.removeAttribute('src');
+  bubbleAttachPreview.classList.add('hidden');
+}
+document.getElementById('bubble-cancel-attach')?.addEventListener('click', clearBubbleAttachment);
 const btnSendReply = document.getElementById('btn-send-reply');
 const btnCollapse = document.getElementById('btn-collapse');
 const btnDashboard = document.getElementById('btn-dashboard');
@@ -145,6 +155,7 @@ function getMessageSnippet(msg) {
   if (!msg) return 'Tin nhắn mới';
   if (msg.isUndo || msg.isRevoked || msg.isRecalled) return '🚫 Tin nhắn đã được thu hồi';
   if (window.VoiceMessage.getVoicePresentation(msg).isVoice) return '🎤 [Tin nhắn thoại]';
+  if (msg.msgType === 'chat.recommended') return window.CallMessage.describeCallMessage(msg);
   if (msg.isPhoto) return '📷 [Hình ảnh]';
   if (msg.isVideo) return '🎥 [Video]';
   if (msg.isSticker) return '✨ [Nhãn dán Sticker]';
@@ -518,6 +529,11 @@ function processIncomingMessage(msg, isNew = false) {
   if (existingIndex !== -1) {
     // Nếu tin đã có là tin tạm self_ và tin mới đến là tin server với id thật -> Cập nhật thông tin chuẩn
     const existing = thread.messages[existingIndex];
+    if (existing.isSelf && existing.content === '[Hình ảnh đã gửi]' && msg.isPhoto) {
+      const deliveryStatus = existing.deliveryStatus;
+      Object.assign(existing, msg);
+      existing.deliveryStatus = window.DeliveryStatus.promoteDeliveryStatus(deliveryStatus, msg.deliveryStatus);
+    }
     if (String(existing.id).startsWith('self_') && targetId && !targetId.startsWith('self_')) {
       existing.id = targetId;
       if (targetCli) existing.cliMsgId = targetCli;
@@ -530,9 +546,9 @@ function processIncomingMessage(msg, isNew = false) {
     thread.messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
     // Nếu tin nhắn mới và không đang xem thread này hoặc bubble đang thu gọn:
-    if (isNew && (!isBubbleExpanded || activeThreadId !== tId)) {
+    if (isNew && window.UnreadMessages.isIncomingMessage(msg) && (!isBubbleExpanded || activeThreadId !== tId)) {
       thread.unreadCount++;
-    } else if (isNew && isBubbleExpanded && activeThreadId === tId) {
+    } else if (isNew && window.UnreadMessages.isIncomingMessage(msg) && isBubbleExpanded && activeThreadId === tId) {
       if (window.electronAPI && window.electronAPI.markThreadRead) {
         window.electronAPI.markThreadRead(tId);
       }
@@ -666,6 +682,7 @@ function closeChatHead(threadId) {
 // Chuyển sang hội thoại của người được chọn
 function switchActiveThread(threadId, markAsRead = null) {
   if (!threadsMap.has(threadId) || threadVisibility.isClosed(threadId)) return;
+  if (activeThreadId && activeThreadId !== threadId) clearBubbleAttachment();
   activeThreadId = threadId;
 
   const thread = threadsMap.get(threadId);
@@ -727,6 +744,10 @@ function renderConversationMessages(msgList) {
 
   const activeThread = threadsMap.get(activeThreadId);
   const isGroupChat = activeThread ? activeThread.isGroup : false;
+  const mentionCandidates = isGroupChat ? [
+    ...bubbleMentionFriends,
+    ...msgList.map(message => ({ id: message.senderId, name: message.senderName }))
+  ] : [];
 
   msgList.forEach(msg => {
     const isSelf = Boolean(
@@ -756,7 +777,7 @@ function renderConversationMessages(msgList) {
       contentHTML = `<div class="bubble-voice">
         <span aria-hidden="true">🎤</span>
         <div><strong>Tin nhắn thoại${voice.duration ? ` • ${escapeHTML(voice.duration)}` : ''}</strong>
-          ${voice.url ? `<audio controls preload="none" src="${escapeHTML(voice.url)}" aria-label="Phát tin nhắn thoại"></audio>`
+          ${voice.url ? `<audio controls preload="none" src="${escapeHTML(voice.url)}" data-voice-fallback="${escapeHTML(window.VoiceMessage.getVoiceFallbackUrl(msg))}" aria-label="Phát tin nhắn thoại"></audio><small class="bubble-voice-error" hidden>Không phát được âm thanh từ liên kết Zalo đã lưu.</small>`
             : '<small>Chưa có tệp âm thanh trong lịch sử đã đồng bộ</small>'}
         </div>
       </div>`;
@@ -807,11 +828,13 @@ function renderConversationMessages(msgList) {
         </div>
       `;
     } else {
-      contentHTML = `<div class="bubble-text">${escapeHTML(msg.content)}</div>`;
+      contentHTML = `<div class="bubble-text">${window.Mentions.renderMentionHtml({ ...msg,
+        content: window.CallMessage.describeCallMessage(msg), isGroup: isGroupChat }, mentionCandidates)}</div>`;
     }
 
     const row = document.createElement('div');
     row.className = `chat-bubble-row ${isSelf ? 'self' : 'other'}`;
+    row.dataset.msgId = String(msg.id || '');
 
     // Avatar nhỏ của thành viên trong nhóm (bên cạnh bong bóng)
     let authorAvatarHTML = '';
@@ -885,6 +908,7 @@ function renderConversationMessages(msgList) {
           ${reactionsHtml}
           <div class="bubble-footer">
             <span class="bubble-time">${timeStr}</span>
+            ${isSelf ? `<span class="bubble-delivery-status">${window.DeliveryStatus.deliveryStatusLabel(msg)}</span>` : ''}
           </div>
           ${!isRevokedMsg ? `
             <div class="bubble-reaction-action">
@@ -904,6 +928,12 @@ function renderConversationMessages(msgList) {
         </div>
       </div>
     `;
+
+    row.querySelectorAll('.chat-mention').forEach(button => button.addEventListener('click', async event => {
+      event.stopPropagation();
+      const result = await window.electronAPI.openContactChat(button.dataset.mentionUid, button.dataset.mentionName);
+      if (!result?.success) console.warn('Không thể mở cuộc trò chuyện:', result?.error);
+    }));
 
     const sendReaction = async (emoji, button) => {
       if (!window.electronAPI?.sendReaction || button.disabled) return;
@@ -948,6 +978,12 @@ function escapeHTML(str) {
 // 6. KHỞI TẠO & LẮNG NGHE SỰ KIỆN TỪ MAIN PROCESS
 // ==========================================
 window.addEventListener('DOMContentLoaded', async () => {
+  window.electronAPI?.getFriendsList?.().then(friends => {
+    if (!Array.isArray(friends)) return;
+    bubbleMentionFriends = friends.map(friend => ({ id: friend.userId,
+      name: friend.displayName || friend.zaloName || friend.name }));
+    if (activeThreadId) renderConversationMessages(threadsMap.get(activeThreadId)?.messages || []);
+  }).catch(error => console.warn('Không thể nạp danh bạ cho @mention:', error));
   if (window.electronAPI && window.electronAPI.getBubbleStartupMessages) {
     try {
       const savedMessages = await window.electronAPI.getBubbleStartupMessages();
@@ -1009,6 +1045,19 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Lắng nghe tin nhắn mới từ Zalo
+window.electronAPI.onDeliveryStatus?.(status => {
+  const thread = threadsMap.get(String(status.threadId));
+  const message = thread?.messages.find(item => String(item.id) === String(status.id) ||
+    String(item.cliMsgId) === String(status.cliMsgId));
+  if (message) message.deliveryStatus = status.deliveryStatus;
+  for (const row of messagesList.querySelectorAll('.chat-bubble-row.self')) {
+    if (row.dataset.msgId !== String(status.id)) continue;
+    const label = row.querySelector('.bubble-delivery-status');
+    if (label) label.textContent = window.DeliveryStatus.deliveryStatusLabel({
+      isSelf: true, isGroup: status.isGroup, deliveryStatus: status.deliveryStatus
+    });
+  }
+});
 if (window.electronAPI && window.electronAPI.onBubbleMessage) {
   window.electronAPI.onBubbleMessage(({ message, isOld, unreadCount, allMessages }) => {
     // CHỈ CÓ TIN NHẮN NÀO BẬT THÔNG BÁO MỚI HIỆN LÊN BONG BÓNG:
@@ -1028,7 +1077,7 @@ if (window.electronAPI && window.electronAPI.onBubbleMessage) {
     }
 
     if (message && !message.isMuted) {
-      if (!isOld) {
+      if (!isOld && window.UnreadMessages.isIncomingMessage(message)) {
         playNotificationSound();
         collapsedHead.classList.add('pulsing');
       }
@@ -1203,7 +1252,7 @@ let isSendingReply = false;
 
 async function handleSendReply() {
   const content = replyInput.value.trim();
-  if (!content) return;
+  if (!content && !bubbleAttachment) return;
 
   if (isSendingReply) return;
   isSendingReply = true;
@@ -1220,7 +1269,8 @@ async function handleSendReply() {
 
   try {
     if (window.electronAPI && window.electronAPI.sendReply) {
-      const res = await window.electronAPI.sendReply(thread.threadId, content, thread.isGroup);
+      const res = await window.electronAPI.sendReply(thread.threadId, content, thread.isGroup,
+        null, bubbleAttachment ? [bubbleAttachment] : null);
       if (res && res.success) {
         // Dùng object tin nhắn chính thức trả về từ server hoặc fallback
         const sentMsg = res.message || {
@@ -1228,7 +1278,7 @@ async function handleSendReply() {
           threadId: thread.threadId,
           isSelf: true,
           senderName: 'Bạn (Tôi)',
-          content: content,
+          content: content || '[Hình ảnh đã gửi]',
           timestamp: Date.now(),
           time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
         };
@@ -1240,6 +1290,7 @@ async function handleSendReply() {
         // Render lại danh sách tin nhắn và scroll xuống cuối
         renderConversationMessages(thread.messages);
         replyInput.value = '';
+        clearBubbleAttachment();
         renderChatHeads();
       } else {
         alert('Gửi tin nhắn thất bại: ' + (res?.error || 'Lỗi không xác định'));
@@ -1264,6 +1315,23 @@ replyInput.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
     e.preventDefault();
     handleSendReply();
+  }
+});
+document.addEventListener('paste', async event => {
+  if (!isBubbleExpanded || !activeThreadId) return;
+  const file = window.ClipboardImage.getClipboardImageFile(event.clipboardData);
+  if (!file) return;
+  event.preventDefault();
+  try {
+    const dataUrl = await window.ClipboardImage.readImageAsDataUrl(file);
+    const filePath = await window.electronAPI.saveClipboardImage(dataUrl);
+    if (!filePath) throw new Error('Không lưu được ảnh');
+    bubbleAttachment = filePath;
+    bubbleAttachImage.src = dataUrl;
+    bubbleAttachPreview.classList.remove('hidden');
+    replyInput.focus();
+  } catch (error) {
+    alert('Không thể dán ảnh: ' + error.message);
   }
 });
 

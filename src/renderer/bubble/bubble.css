@@ -911,6 +911,7 @@ body {
 .chat-bubble-row.self .bubble-time {
   color: #BFDBFE;
 }
+.bubble-delivery-status { font-size: 10px; color: #b4d9ff; }
 
 /* Reaction hiển thị trên bong bóng tin nhắn */
 .bubble-reactions {
@@ -1049,6 +1050,11 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
 }
+.bubble-attach-preview { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: #b8d7ff; }
+.bubble-attach-preview.hidden { display: none; }
+.bubble-attach-preview img { width: 42px; height: 42px; object-fit: cover; border-radius: 7px; }
+.bubble-attach-preview span { flex: 1; }
+.bubble-attach-preview button { border: 0; background: transparent; color: #cbd5e1; cursor: pointer; font-size: 16px; }
 
 .reply-box {
   display: flex;
@@ -1107,3 +1113,17 @@ body {
 .hidden {
   display: none !important;
 }
+.chat-mention {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #63b3ff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: inherit;
+}
+.chat-mention:hover { text-decoration: underline; color: #9ad1ff; }
+.chat-mention:focus-visible { outline: 2px solid #69b7ff; outline-offset: 2px; border-radius: 2px; }
+

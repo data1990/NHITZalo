@@ -1,0 +1,30 @@
+- main [ref=f1e2]:
+  - generic [ref=f1e3]:
+    - generic [ref=f1e4]:
+      - generic [ref=f1e5]: Z
+      - generic [ref=f1e6]:
+        - strong [ref=f1e7]: NHIT Zalo
+        - generic [ref=f1e8]: Quản lý phiên đăng nhập
+    - button "Khóa trang quản trị" [ref=f1e9] [cursor=pointer]
+  - generic [ref=f1e10]:
+    - generic [ref=f1e12]:
+      - generic [ref=f1e13]: TÀI KHOẢN ZALO
+      - heading "Phiên đăng nhập" [level=1] [ref=f1e14]
+      - paragraph [ref=f1e15]: Chọn một tài khoản để tạo QR, xem trạng thái hoặc xóa phiên đã lưu.
+    - generic [ref=f1e16]:
+      - generic [ref=f1e17]: Tên để nhận biết tài khoản
+      - generic [ref=f1e18]:
+        - textbox "Tên để nhận biết tài khoản" [ref=f1e19]:
+          - /placeholder: "Ví dụ: Zalo công việc"
+        - button "+ Thêm tài khoản" [ref=f1e20] [cursor=pointer]
+    - article [ref=f1e22]:
+      - generic [ref=f1e23]:
+        - generic [ref=f1e24]: T
+        - generic [ref=f1e25]:
+          - generic [ref=f1e26]: Tài khoản kiểm thử
+          - generic [ref=f1e27]: Chưa đăng nhập
+      - generic [ref=f1e28]:
+        - button "Đăng nhập QR" [ref=f1e29] [cursor=pointer]
+        - button "Xóa tài khoản" [ref=f1e30] [cursor=pointer]
+    - paragraph [ref=f1e31]: Mã QR chỉ hiển thị sau khi bạn đăng nhập trang quản trị. Không chia sẻ mã QR hoặc mật khẩu quản trị.
+  - status [ref=f1e32]

@@ -12,7 +12,23 @@
       <img src="../../assets/logo.png" alt="" width="48" height="48">
       <div><h1>Chọn tài khoản</h1><p>Mở tin nhắn và danh bạ của tài khoản bạn muốn dùng</p></div>
     </header>
+    <div class="mode-intro"><strong>Dùng trên máy này</strong><p>Chọn tài khoản đã lưu hoặc thêm tài khoản mới. Bạn có thể dùng mà không cần đăng nhập web; dữ liệu sẽ lưu trên máy này.</p></div>
     <div id="account-list" class="account-list" aria-label="Tài khoản đã lưu"></div>
+    <dialog id="remove-dialog" aria-labelledby="remove-title" aria-describedby="remove-description">
+      <form id="remove-form">
+        <h2 id="remove-title">Xóa tài khoản trên máy này?</h2>
+        <p id="remove-description"></p>
+        <div id="remove-password-wrap" hidden>
+          <label for="remove-password">Mật khẩu mở tài khoản</label>
+          <input id="remove-password" type="password" autocomplete="current-password">
+        </div>
+        <p id="remove-error" class="error" role="alert" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button id="cancel-remove" type="button" class="secondary">Hủy</button>
+          <button id="confirm-remove" type="submit" class="danger">Xóa khỏi máy này</button>
+        </div>
+      </form>
+    </dialog>
     <section id="unlock-panel" class="panel" hidden>
       <h2 id="unlock-title">Mở khóa</h2>
       <p id="unlock-hint"></p>
@@ -48,6 +64,42 @@
     </section>
     <p id="form-error" class="error" role="alert" aria-live="polite"></p>
     <button id="show-create" type="button" class="add">＋ Thêm tài khoản mới</button>
+    <section class="web-entry">
+      <div><strong>Đăng nhập tài khoản web</strong><p>Đăng nhập để tự động đồng bộ phiên Zalo lên máy chủ. Sau đó bạn có thể đăng nhập từ máy khác bằng tài khoản web này.</p></div>
+      <button id="show-web-login" type="button" class="secondary">Đăng nhập web</button>
+    </section>
+    <section id="web-panel" class="panel" hidden>
+      <h2 id="web-panel-title">Đăng nhập tài khoản web</h2>
+      <p id="web-panel-hint">Nhập tài khoản website đã được quản trị viên duyệt. Phiên Zalo sẽ được tải về khi mở ứng dụng; sau lần đăng nhập QR mới, phiên sẽ tự đồng bộ lên máy chủ. Mật khẩu web không lưu trên máy này.</p>
+      <div class="web-mode-switch" aria-label="Chọn đăng nhập hoặc đăng ký">
+        <button id="show-web-signin" type="button" class="secondary active" aria-pressed="true">Đăng nhập</button>
+        <button id="show-web-register" type="button" class="secondary" aria-pressed="false">Đăng ký nhanh</button>
+      </div>
+      <form id="web-form">
+        <label for="web-username">Tên đăng nhập</label>
+        <input id="web-username" autocomplete="username" required>
+        <label for="web-password">Mật khẩu web</label>
+        <input id="web-password" type="password" autocomplete="current-password" required>
+        <button type="submit" class="primary">Đăng nhập và đồng bộ</button>
+      </form>
+      <form id="register-form" hidden>
+        <p>Tạo tài khoản web mới. Sau khi gửi đăng ký, quản trị viên cần duyệt trước khi bạn có thể đăng nhập.</p>
+        <label for="register-username">Tên đăng nhập mới</label>
+        <input id="register-username" minlength="3" maxlength="40" pattern="[a-zA-Z0-9_.-]{3,40}" autocomplete="username" required placeholder="3–40 ký tự, không có khoảng trắng">
+        <label for="register-password">Mật khẩu web mới</label>
+        <input id="register-password" type="password" minlength="12" autocomplete="new-password" required placeholder="Ít nhất 12 ký tự">
+        <label for="register-confirm">Nhập lại mật khẩu</label>
+        <input id="register-confirm" type="password" minlength="12" autocomplete="new-password" required>
+        <button type="submit" class="primary">Gửi đăng ký</button>
+      </form>
+      <div id="web-accounts" class="web-accounts" hidden>
+        <strong>Chọn tài khoản Zalo trên web</strong>
+        <div id="web-account-list" class="account-list"></div>
+      </div>
+      <p id="web-error" class="error" role="alert" aria-live="polite"></p>
+      <p id="web-success" class="success" role="status" aria-live="polite"></p>
+      <button id="close-web-login" type="button" class="secondary web-close">Quay lại tài khoản trên máy</button>
+    </section>
   </main>
   <script src="app.js"></script>
 </body>

@@ -17,12 +17,14 @@ const { importDecryptedBackup, decryptBackupKey, downloadBackup, decodeBackupWit
 const { requestNoisedIds, fetchThreadProfiles } = require('./threadIdentity');
 const { extractPhotoCaption } = require('../shared/photoCaption');
 const { describeCallMessage } = require('../shared/callMessage');
+const { parseMentionMetadata } = require('../shared/mentions');
+const { normalizeReceipt, promoteDeliveryStatus } = require('../shared/deliveryStatus');
 
 // Số lượng tin nhắn gần nhất giữ trong bộ nhớ; SQLite lưu toàn bộ lịch sử.
 const MAX_LOCAL_MESSAGES = 5000;
 
 class ZaloManager {
-  constructor(onStatusChange, onNewMessage, onSyncStatus, onMessageUndo, onReactionUpdate, onPhotoCaptionUpdate, accountDataDir) {
+  constructor(onStatusChange, onNewMessage, onSyncStatus, onMessageUndo, onReactionUpdate, onPhotoCaptionUpdate, accountDataDir, onDeliveryStatusChange) {
     this.zalo = null;
     this.api = null;
     this.onStatusChange = onStatusChange || (() => {});
@@ -31,12 +33,14 @@ class ZaloManager {
     this.onMessageUndo = onMessageUndo || (() => {});
     this.onReactionUpdate = onReactionUpdate || (() => {});
     this.onPhotoCaptionUpdate = onPhotoCaptionUpdate || (() => {});
+    this.onDeliveryStatusChange = onDeliveryStatusChange || (() => {});
     const userDataPath = accountDataDir || ((app && typeof app.getPath === 'function')
       ? app.getPath('userData')
       : (process.env.APPDATA ? path.join(process.env.APPDATA, 'nhitzalo') : path.join(__dirname, '../../data')));
     fs.mkdirSync(userDataPath, { recursive: true });
     this.accountDataDir = userDataPath;
     this.sessionPath = path.join(userDataPath, 'zalo_session.json');
+    this.hostedSessionBridge = null;
     this.messagesPath = path.join(userDataPath, 'zalo_messages.json');
     this.groupsPath = path.join(userDataPath, 'zalo_groups.json');
     this.friendsPath = path.join(userDataPath, 'zalo_friends.json');
@@ -343,7 +347,7 @@ class ZaloManager {
   }
 
   // Lưu session
-  saveSession(data) {
+  saveSession(data, { syncHost = true } = {}) {
     try {
       if (!safeStorage?.isEncryptionAvailable()) {
         console.warn('Không thể lưu phiên: mã hóa hệ điều hành chưa khả dụng');
@@ -351,6 +355,8 @@ class ZaloManager {
       }
       const ciphertext = safeStorage.encryptString(JSON.stringify(data)).toString('base64');
       fs.writeFileSync(this.sessionPath, JSON.stringify({ version: 2, ciphertext }), 'utf8');
+      if (syncHost && this.hostedSessionBridge) this.hostedSessionBridge.upload(data)
+        .catch(error => console.warn('Không thể cập nhật phiên Zalo trên hosting:', error.message));
       return true;
     } catch (err) {
       console.error('Lỗi khi lưu session:', err);
@@ -359,8 +365,9 @@ class ZaloManager {
   }
 
   // Xóa session (Đăng xuất)
-  clearSession() {
+  async clearSession() {
     try {
+      if (this.hostedSessionBridge) await this.hostedSessionBridge.clear();
       if (this.recentCatchupTimer) clearInterval(this.recentCatchupTimer);
       if (this.recentCatchupScheduledTimer) clearTimeout(this.recentCatchupScheduledTimer);
       this.recentCatchupTimer = null;
@@ -388,6 +395,7 @@ class ZaloManager {
       return true;
     } catch (err) {
       console.error('Lỗi khi xóa session:', err);
+      this.onStatusChange({ status: 'hosted_session_error', message: `Chưa đăng xuất vì không xóa được phiên trên hosting: ${err.message}` });
       return false;
     }
   }
@@ -462,6 +470,14 @@ class ZaloManager {
         target.isFile = false;
         target.isLink = false;
       }
+      else if (this.messagesHistory[existingIndex].isSelf &&
+        this.messagesHistory[existingIndex].content === '[Hình ảnh đã gửi]' && formattedMsg.isPhoto) {
+        const target = this.messagesHistory[existingIndex];
+        const deliveryStatus = target.deliveryStatus;
+        Object.assign(target, formattedMsg);
+        target.deliveryStatus = promoteDeliveryStatus(deliveryStatus, formattedMsg.deliveryStatus);
+        toPersist = target;
+      }
       else return;
     } else {
       this.messagesHistory.unshift(formattedMsg);
@@ -481,6 +497,32 @@ class ZaloManager {
     } else {
       this.scheduleSaveMessages();
     }
+  }
+
+  applyDeliveryReceipt(receipt, status) {
+    const normalized = normalizeReceipt(receipt, status);
+    if (!normalized) return null;
+    const { threadId, isGroup, messageIds } = normalized;
+    const canonical = id => this.messageStore.identityByPlain.get(String(id).replace(/^g_/, ''))?.noisedId
+      || String(id).replace(/^g_/, '');
+    let updated = null;
+    for (const message of this.messagesHistory) {
+      if (!message.isSelf || !!message.isGroup !== isGroup || canonical(message.threadId) !== canonical(threadId)) continue;
+      if (!messageIds.includes(String(message.id)) && !messageIds.includes(String(message.cliMsgId))) continue;
+      const next = promoteDeliveryStatus(message.deliveryStatus, status);
+      if (next !== message.deliveryStatus) {
+        message.deliveryStatus = next;
+        this.pendingHistoryMessages.set(`${message.threadId}\0${message.id}`, message);
+        this.scheduleSaveMessages();
+        updated = message;
+      }
+      break;
+    }
+    const stored = this.messageStore.updateDeliveryStatus(threadId, messageIds, isGroup, status);
+    updated ||= stored;
+    if (updated) this.onDeliveryStatusChange({ threadId: updated.threadId, id: updated.id,
+      cliMsgId: updated.cliMsgId, isGroup: updated.isGroup, deliveryStatus: updated.deliveryStatus });
+    return updated;
   }
 
   // Lấy toàn bộ lịch sử tin nhắn
@@ -701,7 +743,28 @@ class ZaloManager {
   // Đăng nhập tự động bằng session đã lưu (nếu có)
   // Đăng nhập tự động bằng session đã lưu (có cơ chế thử lại nếu gặp lỗi mạng tạm thời)
   async tryAutoLogin(retries = 3) {
-    const session = this.loadSession();
+    let session = this.loadSession();
+    if (this.hostedSessionBridge) {
+      try {
+        const hosted = await this.hostedSessionBridge.download();
+        if (hosted?.imei && hosted?.cookie) {
+          session = hosted;
+          this.saveSession(hosted, { syncHost: false });
+        } else {
+          session = null;
+          if (this.hasSavedSession()) fs.unlinkSync(this.sessionPath);
+        }
+      } catch (error) {
+        if (error.status === 401 || error.status === 403) {
+          if (this.hasSavedSession()) fs.unlinkSync(this.sessionPath);
+          this.onStatusChange({ status: 'disconnected', message: 'Thiết bị không còn quyền truy cập phiên trên hosting. Hãy ghép nối lại.' });
+          return false;
+        }
+        this.onStatusChange({ status: 'hosted_session_error', message: `Không truy cập được hosting; chưa đăng nhập bằng phiên Zalo: ${error.message}` });
+        this.onStatusChange({ status: 'disconnected', message: 'Chưa đăng nhập: không truy cập được phiên trên hosting' });
+        return false;
+      }
+    }
     if (!session || !session.imei || !session.cookie) {
       return false;
     }
@@ -932,14 +995,24 @@ class ZaloManager {
 
         this.currentUser = {
           name: realName,
-          avatar: realAvatar
+          avatar: realAvatar,
+          userId: String(this.api?.getContext?.()?.uid || '')
         };
 
         if (latestCredentials) {
-          this.saveSession({
+          const nextSession = {
             ...latestCredentials,
             userInfo: this.currentUser
-          });
+          };
+          this.saveSession(nextSession, { syncHost: false });
+          if (this.hostedSessionBridge) {
+            try {
+              await this.hostedSessionBridge.upload(nextSession);
+              this.onStatusChange({ status: 'hosted_session_saved', message: 'Đã lưu phiên Zalo trên hosting' });
+            } catch (error) {
+              this.onStatusChange({ status: 'hosted_session_error', message: `Đã đăng nhập Zalo nhưng chưa lưu phiên trên hosting: ${error.message}` });
+            }
+          }
         }
 
         this.initListener();
@@ -1054,6 +1127,13 @@ class ZaloManager {
         this.addMessageToHistory(formatted);
         this.onNewMessage(formatted, false);
       }
+    });
+
+    this.listener.on('delivered_messages', receipts => {
+      for (const receipt of receipts || []) this.applyDeliveryReceipt(receipt, 'delivered');
+    });
+    this.listener.on('seen_messages', receipts => {
+      for (const receipt of receipts || []) this.applyDeliveryReceipt(receipt, 'seen');
     });
 
     // Lắng nghe sự kiện thu hồi tin nhắn từ người khác hoặc chính mình (undo / revoke)
@@ -2858,6 +2938,7 @@ class ZaloManager {
         threadAvatar: threadAvatar,
         avatar: senderAvatar,
         content: contentText || '[Tin nhắn]',
+        mentions: isGroup ? parseMentionMetadata(data.mentions || message.mentions || data.mentionInfo) : [],
         isPhoto: isPhoto,
         photoUrl: photoUrl,
         thumbUrl: thumbUrl || photoUrl,
@@ -2929,6 +3010,7 @@ class ZaloManager {
       stickerUrl: `https://api.zaloapp.com/api/emoticon/sticker/webpc?eid=${stickerPayload.id}&size=260`,
       isGroup: isGroup,
       isSelf: true,
+      deliveryStatus: 'sent',
       time: timeStr,
       timestamp: ts
     };
@@ -3034,10 +3116,13 @@ class ZaloManager {
 
     let displayContent = content || '';
     if (attachments && attachments.length > 0 && !displayContent) {
-      displayContent = `[Tệp đính kèm: ${path.basename(attachments[0])}]`;
+      displayContent = /\.(png|jpe?g|webp|gif)$/i.test(String(attachments[0]))
+        ? '[Hình ảnh đã gửi]'
+        : `[Tệp đính kèm: ${path.basename(attachments[0])}]`;
     }
 
-    const realMsgId = res?.message?.msgId || res?.message?.data?.msgId || res?.data?.msgId;
+    const realMsgId = res?.message?.msgId || res?.message?.data?.msgId ||
+      res?.attachment?.[0]?.msgId || res?.data?.msgId;
     const myMsg = {
       id: String(realMsgId || ('self_' + ts + '_' + Math.random().toString(36).substring(2, 6))),
       cliMsgId: String(res?.message?.cliMsgId || ts),
@@ -3052,6 +3137,7 @@ class ZaloManager {
       } : null,
       isGroup: !!isGroup,
       isSelf: true,
+      deliveryStatus: 'sent',
       time: timeStr,
       timestamp: ts
     };

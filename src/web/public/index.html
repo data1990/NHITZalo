@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NHIT Zalo · Quản lý phiên</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">Z</span><div><strong>NHIT Zalo</strong><small>Quản lý phiên đăng nhập</small></div></div>
+      <button id="logout" class="button ghost" type="button" hidden>Khóa trang quản trị</button>
+    </header>
+
+    <section id="login-view" class="login-panel">
+      <div class="eyebrow">QUẢN TRỊ WEB</div>
+      <h1>Đăng nhập để quản lý tài khoản Zalo</h1>
+      <p>Phiên Zalo được mã hóa trên máy chủ. Bạn sẽ quét mã QR bằng điện thoại để thêm từng tài khoản.</p>
+      <form id="login-form">
+        <input class="visually-hidden" type="text" name="username" value="admin" autocomplete="username" tabindex="-1" aria-hidden="true">
+        <label for="password">Mật khẩu quản trị</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <button class="button primary" type="submit">Mở trang quản trị</button>
+      </form>
+    </section>
+
+    <section id="dashboard-view" hidden>
+      <div class="page-intro"><div><div class="eyebrow">TÀI KHOẢN ZALO</div><h1>Phiên đăng nhập</h1><p>Chọn một tài khoản để tạo QR, xem trạng thái hoặc xóa phiên đã lưu.</p></div></div>
+      <form id="add-form" class="add-form">
+        <label for="account-label">Tên để nhận biết tài khoản</label>
+        <div class="add-row"><input id="account-label" type="text" maxlength="80" placeholder="Ví dụ: Zalo công việc" required><button class="button primary" type="submit">+ Thêm tài khoản</button></div>
+      </form>
+      <div id="account-list" class="account-grid" aria-live="polite"></div>
+      <p class="footnote">Mã QR chỉ hiển thị sau khi bạn đăng nhập trang quản trị. Không chia sẻ mã QR hoặc mật khẩu quản trị.</p>
+    </section>
+    <p id="notice" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,22 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    environment:
+      NODE_ENV: production
+      WEB_HOST: 127.0.0.1
+      WEB_PORT: "3177"
+      WEB_PUBLIC_ORIGIN: https://zalo.ngochoangit.net
+      WEB_DATA_DIR: /data
+      WEB_ADMIN_PASSWORD_FILE: /run/secrets/admin-password
+      WEB_DB_HOST: 127.0.0.1
+      WEB_DB_PORT: "3306"
+      WEB_DB_NAME: zalo
+      WEB_DB_USER: zalo
+      WEB_DB_PASSWORD_FILE: /run/secrets/db-password
+    volumes:
+      - /www/server/nhitzalo-web/admin-password:/run/secrets/admin-password:ro
+      - /www/server/nhitzalo-web/db-password:/run/secrets/db-password:ro
+      - /www/server/nhitzalo-web/data:/data

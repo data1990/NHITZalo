@@ -2,6 +2,7 @@ const { BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
+const { countIncomingMessages } = require('../shared/unreadMessages');
 
 class BubbleWindowManager {
   constructor(accountDataDir, account) {
@@ -335,7 +336,7 @@ class BubbleWindowManager {
         this.window.webContents.send('new-bubble-message', {
           message,
           isOld: !!isOld,
-          unreadCount: this.unreadMessages.length,
+          unreadCount: countIncomingMessages(this.unreadMessages),
           allMessages: this.unreadMessages
         });
 
@@ -381,7 +382,7 @@ class BubbleWindowManager {
         this.window.webContents.send('new-bubble-message', {
           message: this.unreadMessages[0],
           isOld: true,
-          unreadCount: this.unreadMessages.length,
+          unreadCount: countIncomingMessages(this.unreadMessages),
           allMessages: this.unreadMessages
         });
       }

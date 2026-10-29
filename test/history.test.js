@@ -72,6 +72,50 @@ test('equal message IDs in different conversations are stored separately', () =>
   assert.equal(manager.getThreadHistory('b').length, 1);
 });
 
+test('a sent image placeholder becomes the actual image when Zalo echoes it', () => {
+  const dir = tempDir();
+  const ZaloManager = loadManager(dir);
+  const manager = new ZaloManager(null, null, null, null, null, null, dir);
+  manager.addMessageToHistory({ id: 'image-1', threadId: '123456789', isSelf: true,
+    isGroup: false, content: '[Hình ảnh đã gửi]', timestamp: 1, deliveryStatus: 'sent' }, true);
+  manager.addMessageToHistory({ id: 'image-1', threadId: '123456789', isSelf: true,
+    isGroup: false, isPhoto: true, photoUrl: 'https://example.com/photo.png',
+    content: 'Ảnh thật', timestamp: 2 }, true);
+  const message = manager.getThreadHistory('123456789')[0];
+  assert.equal(message.isPhoto, true);
+  assert.equal(message.photoUrl, 'https://example.com/photo.png');
+  assert.equal(message.deliveryStatus, 'sent');
+  assert.equal(manager.getThreadHistory('123456789').length, 1);
+});
+
+test('Zalo delivery and seen receipts update only the matching sent message across restart', () => {
+  const dir = tempDir();
+  const ZaloManager = loadManager(dir);
+  const updates = [];
+  const manager = new ZaloManager(null, null, null, null, null, null, dir,
+    status => updates.push(status));
+  manager.addMessageToHistory({ id: '42', threadId: '123456789', isSelf: true,
+    isGroup: false, deliveryStatus: 'sent', content: 'sent', timestamp: 1 }, true);
+  manager.addMessageToHistory({ id: '42', threadId: '987654321', isSelf: true,
+    isGroup: false, content: 'other chat', timestamp: 2 }, true);
+  manager.addMessageToHistory({ id: '43', threadId: '123456789', isSelf: false,
+    isGroup: false, content: 'received', timestamp: 3 }, true);
+  manager.applyDeliveryReceipt({ type: 0, threadId: '123456789', data: {
+    msgId: '42', realMsgId: '42', deliveredUids: ['123456789']
+  } }, 'delivered');
+  manager.applyDeliveryReceipt({ type: 0, threadId: '123456789', data: {
+    msgId: '42', realMsgId: '42', idTo: '123456789'
+  } }, 'seen');
+  manager.applyDeliveryReceipt({ type: 0, threadId: '123456789', data: {
+    msgId: '42', deliveredUids: ['123456789']
+  } }, 'delivered');
+  manager.saveMessagesHistory();
+  assert.deepEqual(updates.map(update => update.deliveryStatus), ['delivered', 'seen']);
+  const reopened = new ZaloManager(null, null, null, null, null, null, dir);
+  assert.equal(reopened.getThreadHistory('123456789').find(message => message.id === '42').deliveryStatus, 'seen');
+  assert.equal(reopened.getThreadHistory('987654321')[0].deliveryStatus, '');
+});
+
 test('history list includes old conversations outside the recent message window', () => {
   const dir = tempDir();
   const ZaloManager = loadManager(dir);
@@ -148,6 +192,17 @@ test('live Zalo voice message retains its playable m4a URL', () => {
   assert.equal(message.voiceUrl, 'https://f1.voice.talk.zdn.vn/audio.amr');
   assert.equal(message.m4aUrl, 'https://f1.voice.talk.zdn.vn/audio.m4a');
   assert.equal(message.isSelf, false);
+});
+
+test('live group mention retains the tagged user ID and position', () => {
+  const ZaloManager = loadManager(tempDir());
+  const manager = new ZaloManager();
+  const message = manager.formatMessage({ type: 1, data: {
+    msgId: 'mention-1', grid: '1234567890123456789', uidFrom: '5555555550123456789',
+    msgType: 'webchat', ts: 1000, content: 'Chào @Lan',
+    mentions: [{ pos: 5, len: 4, uid: '9876543210123456789' }]
+  } });
+  assert.deepEqual(message.mentions, [{ pos: 5, len: 4, uid: '9876543210123456789' }]);
 });
 
 test('existing phone backup messages acquire real names without resynchronizing the phone', async () => {

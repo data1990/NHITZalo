@@ -41,6 +41,24 @@ npm start
 ```
 npm install
 npm run build:win
+
+### Cập nhật ứng dụng qua GitHub Releases
+
+Bản cài đặt Windows đọc `latest.yml` của release cố định [`NHITZalo`](https://github.com/data1990/NHITZalo/releases/tag/NHITZalo) khi mở ứng dụng và mỗi 4 giờ. Nếu có phiên bản cao hơn, ứng dụng tự tải, cài đặt im lặng và khởi động lại. Người dùng cũng có thể kiểm tra thủ công từ biểu tượng khay hệ thống → **Kiểm tra cập nhật**. Ứng dụng có thể khởi động lại ngay sau khi tải xong, nên cần lưu nội dung đang soạn.
+
+Để phát hành bản mới:
+
+1. Tăng `version` trong `package.json` (và `package-lock.json`), rồi chạy `npm run build:win`.
+2. Mở release **công khai** mang tag cố định `NHITZalo` (không để Draft). Xóa các tệp cài đặt và metadata của phiên bản cũ khỏi release này.
+3. Tải lên **cùng release đó** ba tệp trong `dist/`: `NHIT-Zalo-Setup-<version>-x64.exe`, tệp `.exe.blockmap` tương ứng và **`latest.yml` sau cùng**. Giữ nguyên tên và nội dung các tệp do build tạo ra; `latest.yml` phải trỏ đến đúng installer và checksum của lần build này.
+
+GitHub phải cho phép sửa asset của release `NHITZalo`; nếu bật **Immutable releases**, không thể thay các tệp của release đã xuất bản. Kho hoặc release cần truy cập công khai để ứng dụng của người dùng tải được. Bản cài đặt đã phát hành trước khi có tính năng này cần được cài thủ công một lần để nhận cập nhật tự động về sau.
+
+### Phiên Zalo trên hosting PHP
+
+Website dùng PHP/MySQL trên aaPanel; VPS không cần Node.js hoặc Docker. Build giao diện MUI X Pro trên máy phát triển bằng `npm run build:php:aapanel`, tải **một tệp ZIP** trong `deploy/php-aapanel/` lên VPS theo [hướng dẫn aaPanel](docs/php-aapanel-session.md). Trong Electron, mở **Cài đặt → Phiên Zalo trên hosting** để nhập mã ghép nối một lần từ website. Khi khởi động, ứng dụng tải session từ hosting rồi mới đăng nhập Zalo.
+
+Các hướng dẫn Node Web Host trước đây trong `docs/web-host-*.md` chỉ dành cho bản cũ.
 ---
 
 ## 📖 Hướng Dẫn Sử Dụng

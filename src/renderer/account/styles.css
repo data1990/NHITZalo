@@ -2,6 +2,16 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; background: #0b1220; color: #f8fafc; }
 .shell { max-width: 520px; margin: auto; padding: 30px 30px 38px; }
+.mode-intro { border-left: 3px solid #2f9aff; padding: 0 0 0 12px; margin-bottom: 14px; }
+.mode-intro p, .web-entry p { margin-top: 5px; font-size: 12px; }
+.web-entry { margin-top: 18px; padding: 16px; border: 1px solid #3d5d84; border-radius: 14px; background: #102039; display: grid; gap: 12px; }
+.web-entry .secondary { width: 100%; }
+.web-accounts { display: grid; gap: 10px; margin-top: 16px; }
+.web-accounts[hidden], .panel[hidden] { display: none; }
+.web-close { width: 100%; margin-top: 12px; }
+.web-mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
+.web-mode-switch .active { border-color: #52a8ff; background: #16447c; color: #fff; }
+.success { color: #66e1b4; font-size: 13px; min-height: 18px; margin-top: 10px; }
 .heading { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
 .heading img { border-radius: 12px; }
 h1 { font-size: 24px; margin: 0 0 5px; }
@@ -16,6 +26,23 @@ p { color: #aebdd2; margin: 0; line-height: 1.45; }
   border-radius: 50%; background: #0877ea; font-size: 19px; font-weight: 700; }
 .account-item strong, .account-item small { display: block; }
 .account-item small { margin-top: 4px; color: #b5c5db; }
+.account-row { display: flex; gap: 8px; align-items: stretch; }
+.account-row .account-item { flex: 1; min-width: 0; }
+.remove-account { width: 46px; flex: none; border: 1px solid #465671; border-radius: 12px;
+  background: #182439; color: #f3b1b7; cursor: pointer; font-size: 19px; }
+.remove-account:hover { background: #4a2534; border-color: #fb7185; color: #fff; }
+dialog { width: min(440px, calc(100vw - 36px)); border: 1px solid #536782; border-radius: 16px;
+  padding: 20px; background: #111d31; color: #f8fafc; box-shadow: 0 24px 80px #000a; }
+dialog::backdrop { background: #020617c9; }
+dialog p { margin: 10px 0 16px; }
+#remove-password-wrap { display: grid; gap: 8px; }
+#remove-password-wrap[hidden] { display: none; }
+.dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.dialog-actions button { min-height: 42px; padding: 0 16px; }
+.danger { border: 1px solid #ef536d; border-radius: 9px; background: #b4233b; color: white;
+  font-weight: 700; cursor: pointer; }
+.danger:hover { background: #d43550; }
+.danger:disabled { opacity: .6; cursor: wait; }
 .panel { margin-top: 20px; padding: 18px; border: 1px solid #40516c; border-radius: 16px; background: #111d31; }
 .panel p { margin-bottom: 14px; font-size: 13px; }
 form { display: grid; gap: 9px; }

@@ -65,8 +65,6 @@ const btnLogout = document.getElementById('btn-logout');
 const dashboardMessagesList = document.getElementById('dashboard-messages-list');
 const feedEmpty = document.getElementById('feed-empty');
 const btnClearHistory = document.getElementById('btn-clear-history');
-const btnTestInTab = document.getElementById('btn-test-in-tab');
-const btnQuickTest = document.getElementById('btn-quick-test');
 const tabUnreadBadge = document.getElementById('tab-unread-badge');
 
 // Settings elements
@@ -215,6 +213,12 @@ if (window.electronAPI && window.electronAPI.onZaloStatus) {
       setTimeout(async () => {
         await refreshConversationHeads();
       }, 1200);
+    } else if (data.status === 'hosted_session_saved') {
+      showToast(data.message, 'success');
+      refreshHostedStatus();
+    } else if (data.status === 'hosted_session_error') {
+      showToast(data.message, 'error');
+      renderHostedStatus({ ...hostedState, phase: 'error', error: data.message });
     } else if (data.status === 'error') {
       qrLoading.classList.add('hidden');
       updateConnectionUI('disconnected', 'Lỗi kết nối', data.message);
@@ -324,6 +328,27 @@ window.AccountModal.setupAccountModal({
   form: document.getElementById('account-password-form')
 });
 
+let lockAfterPasswordSet = false;
+const accountDialog = document.getElementById('local-account-modal');
+accountDialog?.addEventListener('close', () => { lockAfterPasswordSet = false; });
+
+async function startQuickLock() {
+  const result = await window.electronAPI.lockAccount();
+  if (result.success) return;
+  if (result.needsPassword) {
+    lockAfterPasswordSet = true;
+    document.getElementById('btn-open-local-account-modal')?.click();
+    showToast('Đặt mật khẩu cho tài khoản này để dùng khóa nhanh', 'info');
+  } else showToast(result.error || 'Không thể khóa tài khoản', 'error');
+}
+
+document.getElementById('btn-quick-lock')?.addEventListener('click', () => {
+  startQuickLock().catch(error => showToast(error.message, 'error'));
+});
+window.electronAPI.onLockNeedsPassword?.(() => {
+  startQuickLock().catch(error => showToast(error.message, 'error'));
+});
+
 document.getElementById('btn-switch-account')?.addEventListener('click', async () => {
   await window.electronAPI.switchAccount();
 });
@@ -356,6 +381,10 @@ document.getElementById('account-password-form')?.addEventListener('submit', asy
       form.reset();
       updateLocalPasswordUI({ requiresPassword: result.requiresPassword });
       showToast(result.requiresPassword ? 'Đã cập nhật mật khẩu tài khoản' : 'Đã gỡ mật khẩu tài khoản', 'success');
+      if (lockAfterPasswordSet && result.requiresPassword) {
+        lockAfterPasswordSet = false;
+        await startQuickLock();
+      }
     } else showToast(result.error || 'Không thể đổi mật khẩu', 'error');
   } catch (error) { showToast(error.message, 'error'); }
   finally { button.disabled = false; }
@@ -434,22 +463,30 @@ function addMessageToDashboard(msg, isOld = false) {
   }
 
   // Tránh trùng lặp tin nhắn
-  const exists = messagesHistory.some(m => String(m.threadId) === String(msg.threadId) && String(m.id) === String(msg.id));
-  if (exists) return;
+  const existingIndex = messagesHistory.findIndex(m => String(m.threadId) === String(msg.threadId) && String(m.id) === String(msg.id));
+  if (existingIndex !== -1) {
+    const previous = messagesHistory[existingIndex];
+    if (previous.isSelf && previous.content === '[Hình ảnh đã gửi]' && msg.isPhoto) {
+      messagesHistory[existingIndex] = { ...previous, ...msg,
+        deliveryStatus: window.DeliveryStatus.promoteDeliveryStatus(previous.deliveryStatus, msg.deliveryStatus) };
+      renderDashboardFeed();
+    }
+    return;
+  }
 
   messagesHistory.push(msg);
   messagesHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   if (feedEmpty) feedEmpty.style.display = 'none';
 
-  if (!isOld && currentTab !== 'tab-messages') {
+  if (!isOld && currentTab !== 'tab-messages' && window.UnreadMessages.isIncomingMessage(msg)) {
     unreadMessageCount++;
     tabUnreadBadge.textContent = unreadMessageCount > 99 ? '99+' : unreadMessageCount;
     tabUnreadBadge.classList.remove('hidden');
   }
 
   // Nếu tin nhắn đến trong cuộc trò chuyện đang xem, tự động đánh dấu đã xem
-  if (typeof activeThreadId !== 'undefined' && activeThreadId && String(msg.threadId) === String(activeThreadId) && typeof markThreadAsRead === 'function') {
+  if (currentTab === 'tab-messages' && activeThreadId && String(msg.threadId) === String(activeThreadId) && typeof markThreadAsRead === 'function') {
     markThreadAsRead(activeThreadId);
   }
 
@@ -685,6 +722,16 @@ let messageFocusId = null;
 let searchQuery = '';
 let allGroupsList = [];
 let allFriendsList = [];
+const openedMentionContacts = new Map();
+window.electronAPI.onOpenContactChat?.(contact => {
+  if (!/^\d{7,25}$/.test(String(contact?.uid || ''))) return;
+  openedMentionContacts.set(String(contact.uid), String(contact.name || 'Bạn bè Zalo'));
+  activeThreadId = String(contact.uid);
+  messageFocusId = null;
+  document.querySelector('[data-tab="tab-messages"]')?.click();
+  renderDashboardFeed();
+  markThreadAsRead(activeThreadId);
+});
 let currentFilter = 'all'; // 'all' | 'user' | 'group' | 'pinned'
 let pinnedThreadIds = new Set();
 const pinnedConversationsFilter = document.getElementById('pinned-conversations-filter');
@@ -787,7 +834,8 @@ function getThreadUnreadCount(thread) {
   const cleanId = tid.replace(/^g_/, '');
 
   // Nếu đang mở xem cuộc trò chuyện này thì số chưa đọc = 0 (không hiện badge)
-  if (activeThreadId && (String(activeThreadId) === tid || String(activeThreadId).replace(/^g_/, '') === cleanId)) {
+  if (currentTab === 'tab-messages' && activeThreadId &&
+      (String(activeThreadId) === tid || String(activeThreadId).replace(/^g_/, '') === cleanId)) {
     return 0;
   }
 
@@ -800,18 +848,12 @@ function getThreadUnreadCount(thread) {
   // Nếu người dùng đã từng xem (ở Dashboard hoặc trên Bong bóng chat):
   if (lastRead > 0) {
     // Chỉ đếm các tin nhắn từ người khác gửi đến SAU thời điểm đã xem
-    const unreadMsgs = (thread.messages || []).filter(m => {
-      if (m.isSelf) return false;
-      const msgTime = Number(m.timestamp) || 0;
-      return msgTime > lastRead;
-    });
-    return unreadMsgs.length;
+    return window.UnreadMessages.countIncomingMessages(thread.messages, lastRead);
   }
 
   // Nếu chưa từng click vào xem:
   // Đếm các tin nhắn đến từ người khác
-  const incomingMsgs = (thread.messages || []).filter(m => !m.isSelf);
-  return incomingMsgs.length;
+  return window.UnreadMessages.countIncomingMessages(thread.messages);
 }
 
 // Lắng nghe sự kiện hội thoại đã được đọc từ Bong bóng chat để lập tức ẩn số tin chưa đọc trên Dashboard
@@ -850,8 +892,90 @@ function getFileIconSrc(fileName = '') {
 }
 
 const downloadedFilePaths = new Map();
+const fileLookupTimes = new Map();
 
-async function handleDownloadFile(fileUrl, fileName, promptSaveAs = false, triggerBtn = null) {
+function refreshVisibleFileCards() {
+  if (activeThreadId && chatMessagesScroll) {
+    const scrollTop = chatMessagesScroll.scrollTop;
+    renderActiveChatThread();
+    requestAnimationFrame(() => { chatMessagesScroll.scrollTop = scrollTop; });
+  } else if (typeof isInfoPanelOpen !== 'undefined' && isInfoPanelOpen) {
+    renderConversationInfoPanel();
+  }
+}
+
+async function checkLocalFiles(items) {
+  if (!window.electronAPI?.lookupDownloadedFiles) return;
+  const now = Date.now();
+  const pending = (items || []).filter(item => item.url &&
+    now - (fileLookupTimes.get(item.url) || 0) > 30000);
+  if (!pending.length) return;
+  pending.forEach(item => fileLookupTimes.set(item.url, now));
+  try {
+    const found = await window.electronAPI.lookupDownloadedFiles(pending);
+    let changed = false;
+    for (const item of pending) {
+      const previous = downloadedFilePaths.get(item.url) || '';
+      const current = found[item.url] || '';
+      if (current) downloadedFilePaths.set(item.url, current);
+      else downloadedFilePaths.delete(item.url);
+      if (previous !== current) changed = true;
+    }
+    if (changed) refreshVisibleFileCards();
+  } catch (error) {
+    pending.forEach(item => fileLookupTimes.delete(item.url));
+    console.warn('Không thể kiểm tra tệp đã tải:', error);
+  }
+}
+
+const fileDownloadMode = document.getElementById('file-download-mode');
+const fileDownloadDirectory = document.getElementById('file-download-directory');
+const btnChooseFileDirectory = document.getElementById('btn-choose-file-directory');
+const btnOpenFileDirectory = document.getElementById('btn-open-file-directory');
+
+function showFileDownloadSettings(settings) {
+  if (fileDownloadMode) fileDownloadMode.value = settings.mode;
+  if (fileDownloadDirectory) fileDownloadDirectory.textContent = settings.directory;
+}
+
+window.electronAPI?.getFileDownloadSettings?.().then(showFileDownloadSettings)
+  .catch(error => console.warn('Không thể tải cài đặt tệp:', error));
+
+fileDownloadMode?.addEventListener('change', async () => {
+  try {
+    showFileDownloadSettings(await window.electronAPI.setFileDownloadSettings({ mode: fileDownloadMode.value }));
+    showToast(fileDownloadMode.value === 'automatic' ? 'Đã bật tự tải tệp mới nhận' : 'Đã chuyển sang tải tệp thủ công', 'success');
+  } catch (error) { showToast(error.message, 'error'); }
+});
+
+btnChooseFileDirectory?.addEventListener('click', async () => {
+  try {
+    const settings = await window.electronAPI.chooseFileDownloadDirectory();
+    if (settings) {
+      showFileDownloadSettings(settings);
+      fileLookupTimes.clear();
+      refreshVisibleFileCards();
+      showToast('Đã cập nhật thư mục lưu tệp', 'success');
+    }
+  } catch (error) { showToast(error.message, 'error'); }
+});
+
+btnOpenFileDirectory?.addEventListener('click', () => {
+  const directory = fileDownloadDirectory?.textContent;
+  if (directory) window.electronAPI.openFilePath(directory);
+});
+
+window.electronAPI?.onFileDownloadResult?.(result => {
+  if (result.success && result.url && result.filePath) {
+    downloadedFilePaths.set(result.url, result.filePath);
+    fileLookupTimes.set(result.url, Date.now());
+    refreshVisibleFileCards();
+  } else if (result.error) {
+    showToast(`Không thể tự tải tệp: ${result.error}`, 'warning');
+  }
+});
+
+async function handleDownloadFile(fileUrl, fileName, promptSaveAs = false, triggerBtn = null, fileSize = 0) {
   if (!fileUrl) {
     showToast('Tệp tin không có liên kết tải', 'warning');
     return;
@@ -869,7 +993,7 @@ async function handleDownloadFile(fileUrl, fileName, promptSaveAs = false, trigg
   showToast(`Đang tải tệp tin: ${fileName}...`, 'info');
 
   try {
-    const res = await window.electronAPI.downloadFile(fileUrl, fileName, promptSaveAs);
+    const res = await window.electronAPI.downloadFile(fileUrl, fileName, promptSaveAs, fileSize);
     if (res && res.canceled) {
       if (triggerBtn) {
         triggerBtn.disabled = false;
@@ -880,29 +1004,9 @@ async function handleDownloadFile(fileUrl, fileName, promptSaveAs = false, trigg
 
     if (res && res.success && res.filePath) {
       downloadedFilePaths.set(fileUrl, res.filePath);
-      showToast(`Đã tải xong: ${res.fileName}!`, 'success');
-
-      if (triggerBtn && triggerBtn.parentElement) {
-        const container = triggerBtn.parentElement;
-        container.innerHTML = `
-          <button class="btn-file-open" title="Mở tệp tin">📄 Mở tệp</button>
-          <button class="btn-file-folder" title="Mở thư mục chứa">📂 Mở thư mục</button>
-        `;
-        const btnOpen = container.querySelector('.btn-file-open');
-        const btnFolder = container.querySelector('.btn-file-folder');
-        if (btnOpen) {
-          btnOpen.addEventListener('click', (e) => {
-            e.stopPropagation();
-            window.electronAPI.openFilePath(res.filePath);
-          });
-        }
-        if (btnFolder) {
-          btnFolder.addEventListener('click', (e) => {
-            e.stopPropagation();
-            window.electronAPI.showItemInFolder(res.filePath);
-          });
-        }
-      }
+      fileLookupTimes.set(fileUrl, Date.now());
+      showToast(res.existing ? `Tệp đã có trên máy: ${res.fileName}` : `Đã tải xong: ${res.fileName}!`, 'success');
+      refreshVisibleFileCards();
     } else {
       showToast('Lỗi tải tệp: ' + (res?.error || 'Không xác định'), 'error');
       if (triggerBtn) {
@@ -1382,6 +1486,13 @@ function getGroupedThreads() {
     });
   }
 
+  for (const [uid, name] of openedMentionContacts) {
+    if (!threadsMap[uid] && String(activeThreadId) === uid) {
+      threadsMap[uid] = { threadId: uid, senderName: name, avatar: '', isGroup: false,
+        messages: [], lastMessage: { content: '[Chưa có tin nhắn]', time: '', timestamp: 0 } };
+    }
+  }
+
   // Cập nhật số lượng nhóm lên badge của nút lọc Nhóm
   if (groupFilterCount) {
     const totalGroups = Object.values(threadsMap).filter(t => t.isGroup).length;
@@ -1706,6 +1817,11 @@ function renderActiveChatThread(threads) {
   if (!threads) threads = getGroupedThreads();
   const currentThread = threads.find(t => String(t.threadId) === String(activeThreadId)) || threads[0];
   if (!currentThread) return;
+  const mentionCandidates = currentThread.isGroup ? [
+    ...allFriendsList.map(friend => ({ id: friend.userId,
+      name: friend.displayName || friend.zaloName || friend.name })),
+    ...currentThread.messages.map(message => ({ id: message.senderId, name: message.senderName }))
+  ] : [];
   linkPreviewObserver?.disconnect();
   linkPreviewObserver = null;
   resolveVisibleGroupSenders(currentThread);
@@ -1841,6 +1957,9 @@ function renderActiveChatThread(threads) {
   const visibleMessages = focusIndex >= 0
     ? currentThread.messages.slice(Math.max(0, focusIndex - 50), focusIndex + 51)
     : currentThread.messages.slice(-visibleCount);
+  checkLocalFiles(visibleMessages.filter(message => message.fileUrl).map(message => ({
+    url: message.fileUrl, fileName: message.fileName, fileSize: message.fileSize
+  })));
 
   if (focusIndex >= 0) {
     const backToLatest = document.createElement('button');
@@ -1997,7 +2116,7 @@ function renderActiveChatThread(threads) {
           <div class="chat-voice-content">
             <span class="chat-voice-title">Tin nhắn thoại${voice.duration ? ` • ${escapeHTML(voice.duration)}` : ''}</span>
             ${voice.url
-              ? `<audio controls preload="none" src="${escapeHTML(voice.url)}" aria-label="Phát tin nhắn thoại"></audio>`
+              ? `<audio controls preload="none" src="${escapeHTML(voice.url)}" data-voice-fallback="${escapeHTML(window.VoiceMessage.getVoiceFallbackUrl(msg))}" aria-label="Phát tin nhắn thoại"></audio><span class="chat-voice-unavailable" hidden>Không phát được âm thanh từ liên kết Zalo đã lưu.</span>`
               : '<span class="chat-voice-unavailable">Chưa có tệp âm thanh trong lịch sử đã đồng bộ</span>'}
           </div>
         </div>
@@ -2099,14 +2218,15 @@ function renderActiveChatThread(threads) {
             <div class="file-info-sub" style="font-size: 11px; color: #94A3B8; margin-top: 2px;">
               ${escapeHTML(fExt)}${fSizeStr ? ` • ${escapeHTML(fSizeStr)}` : ''}
             </div>
+            ${isSaved ? '<div class="file-local-status">✓ Đã có trên máy</div>' : ''}
             ${fUrl ? `
               <div class="file-action-row">
                 ${isSaved ? `
                   <button class="btn-file-open" data-local-path="${escapeHTML(localSavedPath)}" title="Mở tệp tin">📄 Mở tệp</button>
                   <button class="btn-file-folder" data-local-path="${escapeHTML(localSavedPath)}" title="Mở thư mục chứa">📂 Mở thư mục</button>
                 ` : `
-                  <button class="btn-file-download-quick" data-file-url="${escapeHTML(fUrl)}" data-file-name="${escapeHTML(fName)}" title="Tải về thư mục Downloads">📥 Tải về</button>
-                  <button class="btn-file-download-saveas" data-file-url="${escapeHTML(fUrl)}" data-file-name="${escapeHTML(fName)}" title="Chọn nơi lưu...">💾 Lưu thành...</button>
+                  <button class="btn-file-download-quick" data-file-url="${escapeHTML(fUrl)}" data-file-name="${escapeHTML(fName)}" data-file-size="${Number(msg.fileSize) || 0}" title="Tải về thư mục đã chọn">📥 Tải về</button>
+                  <button class="btn-file-download-saveas" data-file-url="${escapeHTML(fUrl)}" data-file-name="${escapeHTML(fName)}" data-file-size="${Number(msg.fileSize) || 0}" title="Chọn nơi lưu...">💾 Lưu thành...</button>
                 `}
               </div>
             ` : '<span class="file-sub" style="font-size: 11.5px; color: #94A3B8;">Tệp tin Zalo</span>'}
@@ -2119,7 +2239,8 @@ function renderActiveChatThread(threads) {
       msgBodyHtml = `
         <div class="chat-bubble ${isSelf ? 'self' : 'other'}">
           ${quoteHtml}
-          ${escapeHTML(window.CallMessage.describeCallMessage(msg))}
+          ${window.Mentions.renderMentionHtml({ ...msg,
+            content: window.CallMessage.describeCallMessage(msg), isGroup: currentThread.isGroup }, mentionCandidates)}
         </div>
       `;
     }
@@ -2130,7 +2251,10 @@ function renderActiveChatThread(threads) {
         ${senderHeaderHtml}
         ${msgBodyHtml}
         ${!isRevokedMsg ? reactionsHtml : ''}
-        <span class="chat-msg-time">${escapeHTML(msg.time)}</span>
+        <div class="chat-msg-meta">
+          <span class="chat-msg-time">${escapeHTML(msg.time)}</span>
+          ${isSelf ? `<span class="chat-delivery-status">${window.DeliveryStatus.deliveryStatusLabel(msg)}</span>` : ''}
+        </div>
       </div>
 
       ${!isRevokedMsg ? `
@@ -2152,6 +2276,12 @@ function renderActiveChatThread(threads) {
       </div>
       ` : ''}
     `;
+
+    row.querySelectorAll('.chat-mention').forEach(button => button.addEventListener('click', async event => {
+      event.stopPropagation();
+      const result = await window.electronAPI.openContactChat(button.dataset.mentionUid, button.dataset.mentionName);
+      if (!result?.success) showToast(result?.error || 'Không thể mở cuộc trò chuyện', 'error');
+    }));
 
     // Bắt sự kiện xem ảnh lớn trong Lightbox Modal
     const imgWrap = row.querySelector('.chat-msg-img-wrap');
@@ -2242,7 +2372,7 @@ function renderActiveChatThread(threads) {
         e.stopPropagation();
         const fUrl = btnDlQuick.getAttribute('data-file-url');
         const fName = btnDlQuick.getAttribute('data-file-name');
-        handleDownloadFile(fUrl, fName, false, btnDlQuick);
+        handleDownloadFile(fUrl, fName, false, btnDlQuick, Number(btnDlQuick.dataset.fileSize) || 0);
       });
     }
 
@@ -2252,7 +2382,7 @@ function renderActiveChatThread(threads) {
         e.stopPropagation();
         const fUrl = btnDlSaveAs.getAttribute('data-file-url');
         const fName = btnDlSaveAs.getAttribute('data-file-name');
-        handleDownloadFile(fUrl, fName, true, btnDlSaveAs);
+        handleDownloadFile(fUrl, fName, true, btnDlSaveAs, Number(btnDlSaveAs.dataset.fileSize) || 0);
       });
     }
 
@@ -2381,6 +2511,8 @@ if (btnAttachFile) {
       const filePath = await window.electronAPI.chooseFile();
       if (filePath) {
         selectedAttachment = filePath;
+        const icon = chatAttachPreview?.querySelector('.attach-preview-icon');
+        if (icon) icon.textContent = '📎';
         const fileName = filePath.split(/[\\/]/).pop();
         if (chatAttachPreview && attachPreviewName) {
           attachPreviewName.textContent = fileName;
@@ -2398,6 +2530,8 @@ if (btnCancelAttach) {
   btnCancelAttach.addEventListener('click', () => {
     selectedAttachment = null;
     if (chatAttachPreview) chatAttachPreview.style.display = 'none';
+    const icon = chatAttachPreview?.querySelector('.attach-preview-icon');
+    if (icon) icon.textContent = '📎';
   });
 }
 
@@ -2432,6 +2566,8 @@ async function sendChatReply() {
         selectedAttachment = null;
         if (chatQuoteBar) chatQuoteBar.style.display = 'none';
         if (chatAttachPreview) chatAttachPreview.style.display = 'none';
+        const icon = chatAttachPreview?.querySelector('.attach-preview-icon');
+        if (icon) icon.textContent = '📎';
 
         // Cập nhật ngay tin nhắn lên giao diện chat
         if (res.message) {
@@ -2482,28 +2618,32 @@ if (window.electronAPI && window.electronAPI.onNewMessage) {
     addMessageToDashboard(message, isOld);
   });
 }
-
-// Thử tin nhắn mẫu
-function triggerTestMessage() {
-  if (window.electronAPI && window.electronAPI.sendTestMessage) {
-    window.electronAPI.sendTestMessage();
-  }
-}
-
-btnQuickTest.addEventListener('click', triggerTestMessage);
-btnTestInTab.addEventListener('click', triggerTestMessage);
-
-// Xóa nhật ký
-btnClearHistory.addEventListener('click', async () => {
-  if (confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử tin nhắn đã lưu?')) {
-    messagesHistory = [];
-    if (window.electronAPI && window.electronAPI.clearHistoryMessages) {
-      await window.electronAPI.clearHistoryMessages();
-    }
-    renderDashboardFeed();
-    showToast('Đã xóa sạch toàn bộ lịch sử tin nhắn!', 'info');
+window.electronAPI.onDeliveryStatus?.(status => {
+  const message = messagesHistory.find(item => String(item.threadId) === String(status.threadId) &&
+    (String(item.id) === String(status.id) || String(item.cliMsgId) === String(status.cliMsgId)));
+  if (message) message.deliveryStatus = status.deliveryStatus;
+  for (const row of document.querySelectorAll('.chat-msg-row.self')) {
+    if (row.dataset.msgId !== String(status.id)) continue;
+    const label = row.querySelector('.chat-delivery-status');
+    if (label) label.textContent = window.DeliveryStatus.deliveryStatusLabel({
+      isSelf: true, isGroup: status.isGroup, deliveryStatus: status.deliveryStatus
+    });
   }
 });
+
+// Xóa nhật ký
+if (btnClearHistory) {
+  btnClearHistory.addEventListener('click', async () => {
+    if (confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử tin nhắn đã lưu?')) {
+      messagesHistory = [];
+      if (window.electronAPI && window.electronAPI.clearHistoryMessages) {
+        await window.electronAPI.clearHistoryMessages();
+      }
+      renderDashboardFeed();
+      showToast('Đã xóa sạch toàn bộ lịch sử tin nhắn!', 'info');
+    }
+  });
+}
 
 function escapeHTML(str) {
   if (!str) return '';
@@ -2515,6 +2655,144 @@ function escapeHTML(str) {
 // =========================================
 // 4. CÀI ĐẶT BONG BÓNG CHAT
 // =========================================
+const hostedCard = document.getElementById('hosted-session-card');
+const hostedStatus = document.getElementById('hosted-session-status');
+const hostedStatusTitle = document.getElementById('hosted-status-title');
+const hostedStatusBadge = document.getElementById('hosted-status-badge');
+const hostedOrigin = document.getElementById('hosted-origin');
+const hostedPairCode = document.getElementById('hosted-pair-code');
+const hostedFormFields = document.getElementById('hosted-form-fields');
+const hostedAccountDetails = document.getElementById('hosted-account-details');
+const hostedConnectedOrigin = document.getElementById('hosted-connected-origin');
+const hostedAccountLabel = document.getElementById('hosted-account-label');
+const hostedBackupNote = document.getElementById('hosted-backup-note');
+const hostedActionNote = document.getElementById('hosted-action-note');
+const btnCheckHosted = document.getElementById('btn-check-hosted');
+const btnPairHosted = document.getElementById('btn-pair-hosted');
+const btnUnpairHosted = document.getElementById('btn-unpair-hosted');
+let hostedState = { phase: 'disconnected', paired: false, connected: false, origin: '' };
+let hostedBusy = false;
+
+function renderHostedStatus(next) {
+  const update = { ...next };
+  if ('phase' in update && update.phase !== hostedState.phase) {
+    if (!('message' in update)) update.message = '';
+    if (!('error' in update)) update.error = '';
+  }
+  hostedState = { ...hostedState, ...update };
+  const state = hostedState;
+  const phases = {
+    disconnected: ['Chưa kết nối', 'Chưa ghép nối', 'Nhập website và mã ghép nối để bắt đầu.'],
+    checking: ['Đang kiểm tra', 'Đang kiểm tra kết nối', 'Đang xác minh website, MySQL và thiết bị nếu đã ghép nối...'],
+    ready: ['Sẵn sàng', 'Máy chủ sẵn sàng', 'PHP và MySQL hoạt động. Nhập mã ghép nối rồi bấm Kết nối.'],
+    connecting: ['Đang kết nối', 'Đang ghép nối tài khoản', 'Đang xác minh mã và đồng bộ phiên Zalo...'],
+    connected: ['Đã kết nối', 'Kết nối thành công', 'Thiết bị đã được xác thực với hosting.'],
+    disconnecting: ['Đang ngắt', 'Đang ngắt kết nối', 'Đang thu hồi quyền truy cập của thiết bị...'],
+    offline: ['Mất kết nối', 'Không truy cập được hosting', 'Kiểm tra mạng, HTTPS và cấu hình PHP/MySQL.'],
+    'auth-error': ['Cần ghép nối lại', 'Quyền thiết bị đã hết hiệu lực', 'Tạo mã mới trên website rồi kết nối lại.'],
+    error: ['Có lỗi', 'Chưa thể kết nối', 'Kiểm tra thông tin và thử lại.']
+  };
+  const [badge, title, fallback] = phases[state.phase] || phases.error;
+  hostedCard.dataset.phase = state.phase;
+  hostedStatusBadge.textContent = badge;
+  hostedStatusTitle.textContent = title;
+  hostedStatus.textContent = state.error || state.message || fallback;
+  if (state.origin) hostedOrigin.value = state.origin;
+  hostedAccountDetails.hidden = !state.paired;
+  hostedConnectedOrigin.textContent = state.origin || '—';
+  hostedAccountLabel.textContent = state.accountLabel || 'Tài khoản Zalo';
+  hostedBackupNote.textContent = state.hasSession ? 'Đã có phiên Zalo trên hosting' : 'Chưa có phiên Zalo trên hosting';
+  const showPairForm = !state.paired || state.phase === 'auth-error' || state.phase === 'error';
+  hostedFormFields.hidden = !showPairForm;
+  btnPairHosted.hidden = !showPairForm;
+  btnUnpairHosted.hidden = !state.paired;
+  btnCheckHosted.disabled = hostedBusy;
+  btnPairHosted.disabled = hostedBusy;
+  btnUnpairHosted.disabled = hostedBusy;
+  hostedActionNote.textContent = state.paired
+    ? 'Ngắt kết nối sẽ thu hồi quyền thiết bị với hosting; tài khoản Zalo đang mở vẫn hoạt động cho đến khi bạn đăng xuất.'
+    : 'Kết nối chỉ cấp quyền cho tài khoản đang chọn trên máy này.';
+}
+
+async function refreshHostedStatus() {
+  if (hostedBusy) return;
+  hostedBusy = true;
+  renderHostedStatus({ phase: 'checking', error: '' });
+  try {
+    const origin = hostedOrigin.value.trim();
+    renderHostedStatus(await (hostedState.paired || !origin
+      ? window.electronAPI.getHostedSessionStatus()
+      : window.electronAPI.checkHostedConnection(origin)));
+  } catch (error) {
+    renderHostedStatus({ phase: 'error', error: error.message });
+  } finally {
+    hostedBusy = false;
+    renderHostedStatus({});
+  }
+}
+
+btnCheckHosted?.addEventListener('click', async () => {
+  if (hostedBusy) return;
+  const origin = hostedOrigin.value.trim();
+  if (!origin && !hostedState.paired) return renderHostedStatus({ phase: 'error', error: 'Hãy nhập địa chỉ website trước khi kiểm tra.' });
+  hostedBusy = true;
+  renderHostedStatus({ phase: 'checking', error: '' });
+  try {
+    renderHostedStatus(await window.electronAPI.checkHostedConnection(origin));
+  } catch (error) {
+    renderHostedStatus({ phase: 'error', error: error.message });
+  } finally {
+    hostedBusy = false;
+    renderHostedStatus({});
+  }
+});
+
+btnPairHosted?.addEventListener('click', async () => {
+  if (hostedBusy) return;
+  const origin = hostedOrigin.value.trim();
+  const code = hostedPairCode.value.trim().toUpperCase();
+  if (!origin || !/^[A-Z0-9]{12}$/.test(code)) {
+    return renderHostedStatus({ phase: 'error', error: 'Nhập địa chỉ website và mã ghép nối 12 ký tự.' });
+  }
+  hostedBusy = true;
+  renderHostedStatus({ phase: 'connecting', error: '' });
+  try {
+    const result = await window.electronAPI.pairHostedSession(origin, code);
+    if (!result.success) throw new Error(result.error || 'Không thể kết nối hosting');
+    hostedPairCode.value = '';
+    renderHostedStatus({ phase: 'connected', paired: true, connected: true, origin: result.origin,
+      accountLabel: result.accountLabel, hasSession: result.hasSession, error: '', message: '' });
+    showToast('Đã kết nối hosting thành công', 'success');
+  } catch (error) {
+    renderHostedStatus({ phase: 'error', error: error.message });
+  } finally {
+    hostedBusy = false;
+    renderHostedStatus({});
+  }
+});
+
+btnUnpairHosted?.addEventListener('click', async () => {
+  if (hostedBusy) return;
+  hostedBusy = true;
+  renderHostedStatus({ phase: 'disconnecting', error: '' });
+  try {
+    const result = await window.electronAPI.unpairHostedSession();
+    if (!result.success) throw new Error(result.error || 'Không thể ngắt kết nối');
+    hostedPairCode.value = '';
+    renderHostedStatus({ phase: 'disconnected', paired: false, connected: false,
+      accountLabel: '', hasSession: false, error: '', message: '' });
+    showToast('Đã ngắt kết nối hosting', 'success');
+  } catch (error) {
+    renderHostedStatus({ phase: 'error', error: error.message });
+  } finally {
+    hostedBusy = false;
+    renderHostedStatus({});
+  }
+});
+
+window.electronAPI?.getHostedSessionStatus && refreshHostedStatus();
+document.querySelector('[data-tab="tab-settings"]')?.addEventListener('click', () => refreshHostedStatus());
+
 if (btnResetBubblePos) {
   btnResetBubblePos.addEventListener('click', () => {
     if (window.electronAPI && window.electronAPI.bubbleResetPosition) {
@@ -3391,6 +3669,9 @@ function renderConversationInfoPanel() {
       senderName: m.senderName
     };
   });
+  checkLocalFiles(filesList.filter(item => item.url).map(item => ({
+    url: item.url, fileName: item.name, fileSize: item.size
+  })));
 
   // 3. Trích xuất Links liên kết
   const linksList = [];
@@ -3494,7 +3775,7 @@ function renderConversationInfoPanel() {
                 <img src="${iconSrc}" class="info-file-zalo-icon" width="34" height="34" alt="File">
                 <div class="info-file-details">
                   <div class="info-file-title" title="${escapeHTML(item.name)}">${escapeHTML(item.name)}</div>
-                  <div class="info-file-sub">${escapeHTML(item.senderName || '')} • ${escapeHTML(item.time || '')}</div>
+                  <div class="info-file-sub">${escapeHTML(item.senderName || '')} • ${escapeHTML(item.time || '')}${localSaved ? ' • Đã có trên máy' : ''}</div>
                 </div>
                 ${item.url ? `
                   <div class="info-file-actions" style="display: flex; gap: 4px; align-items: center;">
@@ -3502,8 +3783,8 @@ function renderConversationInfoPanel() {
                       <button class="btn-file-open" data-local-path="${escapeHTML(localSaved)}" title="Mở tệp tin">📄 Mở</button>
                       <button class="btn-file-folder" data-local-path="${escapeHTML(localSaved)}" title="Mở thư mục chứa">📂</button>
                     ` : `
-                      <button class="btn-info-file-dl btn-file-download-quick" data-file-url="${escapeHTML(item.url)}" data-file-name="${escapeHTML(item.name)}" data-save-as="false" title="Tải về máy">📥 Tải</button>
-                      <button class="btn-info-file-dl btn-file-download-saveas" data-file-url="${escapeHTML(item.url)}" data-file-name="${escapeHTML(item.name)}" data-save-as="true" title="Chọn nơi lưu...">💾</button>
+                      <button class="btn-info-file-dl btn-file-download-quick" data-file-url="${escapeHTML(item.url)}" data-file-name="${escapeHTML(item.name)}" data-file-size="${Number(item.size) || 0}" data-save-as="false" title="Tải về thư mục đã chọn">📥 Tải</button>
+                      <button class="btn-info-file-dl btn-file-download-saveas" data-file-url="${escapeHTML(item.url)}" data-file-name="${escapeHTML(item.name)}" data-file-size="${Number(item.size) || 0}" data-save-as="true" title="Chọn nơi lưu...">💾</button>
                     `}
                   </div>
                 ` : ''}
@@ -3697,7 +3978,7 @@ function renderConversationInfoPanel() {
       const fUrl = btn.getAttribute('data-file-url');
       const fName = btn.getAttribute('data-file-name');
       const isSaveAs = btn.getAttribute('data-save-as') === 'true';
-      handleDownloadFile(fUrl, fName, isSaveAs, btn);
+      handleDownloadFile(fUrl, fName, isSaveAs, btn, Number(btn.dataset.fileSize) || 0);
     });
   });
 
@@ -4754,39 +5035,29 @@ document.addEventListener('paste', async (e) => {
   // Chỉ kích hoạt khi đang ở tab Tin nhắn và đã chọn một cuộc trò chuyện
   if (currentTab !== 'tab-messages' || !activeThreadId) return;
 
-  const items = e.clipboardData ? e.clipboardData.items : null;
-  if (!items) return;
-
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (item.type && item.type.indexOf('image') !== -1) {
-      e.preventDefault();
-      const blob = item.getAsFile();
-      if (blob) {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const base64Data = reader.result;
-          if (window.electronAPI && window.electronAPI.saveClipboardImage) {
-            try {
-              const savedPath = await window.electronAPI.saveClipboardImage(base64Data);
-              if (savedPath) {
-                selectedAttachment = savedPath;
-                if (chatAttachPreview && attachPreviewName) {
-                  attachPreviewName.textContent = '🖼️ Ảnh chụp màn hình vừa dán';
-                  chatAttachPreview.style.display = 'flex';
-                }
-                showToast('Đã đính kèm ảnh chụp màn hình từ Clipboard! Bấm gửi để gửi đi.', 'success');
-                if (chatReplyInput) chatReplyInput.focus();
-              }
-            } catch (err) {
-              showToast('Lỗi lưu ảnh clipboard: ' + err.message, 'error');
-            }
-          }
-        };
-        reader.readAsDataURL(blob);
+  const file = window.ClipboardImage.getClipboardImageFile(e.clipboardData);
+  if (!file) return;
+  e.preventDefault();
+  try {
+    const dataUrl = await window.ClipboardImage.readImageAsDataUrl(file);
+    const savedPath = await window.electronAPI.saveClipboardImage(dataUrl);
+    if (!savedPath) throw new Error('Không lưu được ảnh');
+    selectedAttachment = savedPath;
+    if (chatAttachPreview && attachPreviewName) {
+      attachPreviewName.textContent = 'Ảnh vừa dán • Bấm Gửi để chuyển đi';
+      chatAttachPreview.style.display = 'flex';
+      const icon = chatAttachPreview.querySelector('.attach-preview-icon');
+      if (icon) {
+        icon.replaceChildren();
+        const image = document.createElement('img');
+        image.src = dataUrl;
+        image.alt = 'Ảnh sẽ gửi';
+        icon.appendChild(image);
       }
-      break;
     }
+    chatReplyInput?.focus();
+  } catch (error) {
+    showToast('Không thể dán ảnh: ' + error.message, 'error');
   }
 });
 

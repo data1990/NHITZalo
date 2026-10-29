@@ -65,3 +65,30 @@ test('account managers keep sessions and message databases in separate directori
   assert.notEqual(first.groupsPath, second.groupsPath);
   assert.equal(second.getHistoryMessages().length, 0);
 });
+
+test('empty hosted session removes stale local session before auto login', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nhitzalo-hosted-empty-'));
+  const manager = createManager(dir);
+  manager.saveSession({ imei: 'old', cookie: [{ name: 'sid', value: 'old' }] });
+  manager.hostedSessionBridge = { download: async () => null };
+  assert.equal(await manager.tryAutoLogin(), false);
+  assert.equal(manager.hasSavedSession(), false);
+});
+
+test('revoked hosted device cannot fall back to local Zalo session', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nhitzalo-hosted-revoked-'));
+  const manager = createManager(dir);
+  manager.saveSession({ imei: 'old', cookie: [{ name: 'sid', value: 'old' }] });
+  manager.hostedSessionBridge = { download: async () => { const error = new Error('Revoked'); error.status = 401; throw error; } };
+  assert.equal(await manager.tryAutoLogin(), false);
+  assert.equal(manager.hasSavedSession(), false);
+});
+
+test('hosting outage does not silently log in with a local copy', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nhitzalo-hosted-outage-'));
+  const manager = createManager(dir);
+  manager.saveSession({ imei: 'old', cookie: [{ name: 'sid', value: 'old' }] });
+  manager.hostedSessionBridge = { download: async () => { throw new Error('Network unreachable'); } };
+  assert.equal(await manager.tryAutoLogin(), false);
+  assert.equal(manager.hasSavedSession(), true);
+});

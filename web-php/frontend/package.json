@@ -1,0 +1,23 @@
+{
+  "name": "nhitzalo-php-ui",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^7.3.0",
+    "@mui/material": "^7.3.0",
+    "@mui/x-data-grid-pro": "^8.14.0",
+    "@mui/x-license": "^8.14.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "php-parser": "^3.7.0",
+    "vite": "^7.1.0"
+  }
+}

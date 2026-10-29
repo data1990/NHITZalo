@@ -20,6 +20,11 @@
         <span class="version-tag">PRO</span>
       </div>
       <div class="titlebar-actions">
+        <button id="btn-quick-lock" type="button" class="titlebar-btn btn-quick-lock" title="Khóa nhanh tài khoản" aria-label="Khóa nhanh tài khoản">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="4" y="10" width="16" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+          </svg>
+        </button>
         <button id="btn-win-minimize" class="titlebar-btn" title="Thu nhỏ">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
@@ -75,19 +80,12 @@
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
-            <span>Cài đặt Bong bóng</span>
+            <span>Cài đặt</span>
           </button>
         </nav>
 
-        <!-- Quick Test Button & Brand Card -->
+        <!-- Brand Card -->
         <div class="sidebar-footer">
-          <button id="btn-quick-test" class="btn-primary-gradient" title="Thử nghiệm bong bóng chat nổi tròn ngay bây giờ">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
-            <span>Thử tin nhắn mẫu</span>
-          </button>
-
           <div class="sidebar-brand-card">
             <img src="../../assets/logo.png" class="sidebar-brand-logo" alt="Ngọc Hoàng IT">
             <div class="sidebar-brand-text">
@@ -212,28 +210,9 @@
             </div>
             <div class="header-tools">
               <button id="btn-search-all" class="btn-secondary-sm" title="Tìm trong toàn bộ lịch sử tin nhắn" aria-label="Tìm trong toàn bộ lịch sử tin nhắn">Tìm toàn bộ tin</button>
-              <button id="btn-sync-history-status" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px;" title="Kiểm tra tình trạng lưu trữ & lịch sử đồng bộ tin nhắn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="16" y1="13" x2="8" y2="13"></line>
-                  <line x1="16" y1="17" x2="8" y2="17"></line>
-                  <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
-                <span>Kiểm tra đồng bộ</span>
-              </button>
               <button id="btn-quick-sync-cloud" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px; color: #38BDF8; border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.08);" title="Tải tin nhắn gần đây từ kết nối Zalo, không cần mở điện thoại">
                 <span id="quick-sync-icon" style="font-size: 13px;">⚡</span>
                 <span id="quick-sync-text">Đồng bộ nhanh</span>
-              </button>
-              <button id="btn-fetch-groups" class="btn-secondary-sm" style="display: flex; align-items: center; gap: 5px;" title="Tải lại danh sách các Nhóm Zalo">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-                <span>Làm mới Nhóm</span>
               </button>
               <button id="btn-sync-messages" class="btn-primary-sm" style="display: flex; align-items: center; gap: 6px; background: #0068FF;" title="Gửi yêu cầu đồng bộ tới Zalo trên điện thoại">
                 <svg id="sync-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -241,8 +220,6 @@
                 </svg>
                 <span id="sync-text">Đồng bộ từ điện thoại</span>
               </button>
-              <button id="btn-clear-history" class="btn-secondary-sm">Xóa nhật ký</button>
-              <button id="btn-test-in-tab" class="btn-secondary-sm">+ Thử tin mẫu</button>
             </div>
           </div>
 
@@ -499,11 +476,68 @@
         <!-- TAB 3: CÀI ĐẶT BONG BÓNG CHAT -->
         <section id="tab-settings" class="tab-panel">
           <div class="panel-header">
-            <h2>Cấu hình Bong bóng Chat nổi</h2>
-            <p>Tùy chỉnh hành vi hiển thị của popup hình tròn trên màn hình máy tính</p>
+            <h2>Cài đặt ứng dụng</h2>
+            <p>Quản lý tệp Zalo và bong bóng chat trên máy tính</p>
           </div>
 
           <div class="settings-grid">
+            <div class="setting-card full-width hosted-session-card" id="hosted-session-card" data-phase="checking">
+              <div class="hosted-session-heading">
+                <div class="setting-info">
+                  <h4>Phiên Zalo trên hosting</h4>
+                  <p>Kết nối ứng dụng với website để lưu và sử dụng phiên Zalo của tài khoản này.</p>
+                </div>
+                <span id="hosted-status-badge" class="hosted-status-badge">Đang kiểm tra</span>
+              </div>
+              <div class="hosted-status-panel" role="status" aria-live="polite" aria-atomic="true">
+                <span class="hosted-status-indicator" aria-hidden="true"></span>
+                <div>
+                  <strong id="hosted-status-title">Đang kiểm tra kết nối</strong>
+                  <p id="hosted-session-status" class="web-host-status">Vui lòng đợi trong giây lát...</p>
+                </div>
+              </div>
+              <div id="hosted-account-details" class="hosted-account-details" hidden>
+                <span>Website <strong id="hosted-connected-origin"></strong></span>
+                <span>Tài khoản <strong id="hosted-account-label"></strong></span>
+                <span id="hosted-backup-note"></span>
+              </div>
+              <div id="hosted-form-fields" class="hosted-form-fields">
+                <label for="hosted-origin">Địa chỉ website</label>
+                <input id="hosted-origin" type="url" inputmode="url" autocomplete="url" placeholder="https://zalo.ngochoangit.net" spellcheck="false">
+                <label for="hosted-pair-code">Mã ghép nối một lần</label>
+                <input id="hosted-pair-code" type="text" maxlength="12" autocomplete="off" autocapitalize="characters" placeholder="12 ký tự trên trang quản trị" spellcheck="false">
+                <p>Tạo mã trong trang quản trị web. Mã chỉ dùng một lần và hết hạn sau 10 phút.</p>
+              </div>
+              <div class="hosted-actions">
+                <button id="btn-check-hosted" type="button" class="btn-secondary">Kiểm tra kết nối</button>
+                <button id="btn-pair-hosted" type="button" class="hosted-connect">Kết nối</button>
+                <button id="btn-unpair-hosted" type="button" class="btn-secondary hosted-disconnect" hidden>Ngắt kết nối</button>
+              </div>
+              <p id="hosted-action-note" class="hosted-action-note">Kết nối chỉ cấp quyền cho tài khoản đang chọn trên máy này.</p>
+            </div>
+            <div class="setting-card file-settings-card">
+              <div class="setting-info">
+                <h4>Tải tệp đính kèm</h4>
+                <p>Chọn tải thủ công hoặc tự động tải tệp mới nhận được. Tệp đã có trên máy sẽ không tải lại.</p>
+              </div>
+              <label class="file-setting-field" for="file-download-mode">
+                <span>Chế độ tải</span>
+                <select id="file-download-mode">
+                  <option value="manual">Thủ công</option>
+                  <option value="automatic">Tự động</option>
+                </select>
+              </label>
+            </div>
+            <div class="setting-card file-settings-card">
+              <div class="setting-info">
+                <h4>Thư mục lưu tệp</h4>
+                <p id="file-download-directory" class="file-download-directory">Đang tải...</p>
+              </div>
+              <div class="file-setting-actions">
+                <button id="btn-choose-file-directory" type="button" class="btn-secondary">Chọn thư mục</button>
+                <button id="btn-open-file-directory" type="button" class="btn-secondary">Mở thư mục</button>
+              </div>
+            </div>
             <div class="setting-card">
               <div class="setting-info">
                 <h4>Hiển thị Bong bóng trên màn hình</h4>
@@ -935,6 +969,10 @@
 
   <script src="../../shared/accountStorage.js"></script>
   <script src="../../shared/callMessage.js"></script>
+  <script src="../../shared/mentions.js"></script>
+  <script src="../../shared/unreadMessages.js"></script>
+  <script src="../../shared/deliveryStatus.js"></script>
+  <script src="../../shared/clipboardImage.js"></script>
   <script src="accountModal.js"></script>
   <script src="pinnedMessages.js"></script>
   <script src="lazyHistory.js"></script>

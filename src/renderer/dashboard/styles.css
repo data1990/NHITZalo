@@ -99,6 +99,26 @@ body {
   color: #FFFFFF;
 }
 
+.titlebar-btn.btn-quick-lock {
+  width: 34px;
+  height: 30px;
+  margin-right: 8px;
+  border: 1px solid #47607d;
+  border-radius: 9px;
+  color: #c9e2ff;
+  background: #17243a;
+}
+
+.titlebar-btn.btn-quick-lock:hover {
+  background: #24466f;
+  border-color: #78b8ff;
+}
+
+.titlebar-btn:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
 .titlebar-btn.btn-close:hover {
   background: #EF4444;
   color: #FFFFFF;
@@ -229,33 +249,6 @@ body {
 
 .sidebar-footer {
   padding-top: 10px;
-}
-
-.btn-primary-gradient {
-  width: 100%;
-  padding: 12px;
-  background: linear-gradient(135deg, #0084FF 0%, #0052CC 100%);
-  color: white;
-  border: none;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(0, 104, 255, 0.35);
-  transition: all 0.2s;
-}
-
-.btn-primary-gradient:hover {
-  box-shadow: 0 6px 20px rgba(0, 104, 255, 0.5);
-  transform: translateY(-1px);
-}
-
-.btn-primary-gradient:active {
-  transform: translateY(0);
 }
 
 .sidebar-brand-card {
@@ -1250,6 +1243,12 @@ body {
 .chat-msg-row.self .chat-msg-time {
   color: #94A3B8;
 }
+.chat-msg-meta { display: flex; align-items: center; gap: 7px; margin-top: 2px; }
+.chat-delivery-status {
+  font-size: 10.5px;
+  color: #9bcaff;
+  font-weight: 600;
+}
 
 /* THANH NHẬP PHẢN HỒI NHANH */
 .chat-input-bar {
@@ -1375,6 +1374,55 @@ body {
   align-items: flex-start;
   gap: 14px;
 }
+
+.file-settings-card { gap: 18px; flex-wrap: wrap; }
+.file-settings-card .setting-info { flex: 1 1 280px; min-width: 0; }
+.file-setting-field { display: flex; align-items: center; gap: 10px; color: #cbd5e1; font-size: 13px; }
+.file-setting-field select { min-width: 130px; padding: 9px 12px; border: 1px solid #3b4b62; border-radius: 9px; background: #19263b; color: #f8fafc; font: inherit; }
+.file-setting-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.file-download-directory { overflow-wrap: anywhere; user-select: text; }
+.file-local-status { color: #32d5a4; font-size: 11px; font-weight: 600; margin-top: 6px; }
+.hosted-session-card { max-width: 800px; }
+.hosted-session-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; width: 100%; }
+.hosted-session-heading .setting-info { min-width: 0; }
+.hosted-status-badge { flex: none; padding: 6px 11px; border-radius: 999px; color: #b9c9dc; background: #202d42; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.hosted-status-panel { display: flex; align-items: flex-start; gap: 13px; width: 100%; padding: 14px 16px; border: 1px solid #354762; border-radius: 12px; background: #152238; }
+.hosted-status-panel strong { display: block; color: #f8fafc; font-size: 14px; line-height: 1.5; }
+.hosted-status-indicator { flex: none; width: 12px; height: 12px; margin-top: 4px; border-radius: 50%; background: #92a5bf; box-shadow: 0 0 0 4px rgba(146,165,191,.15); }
+.web-host-status { margin: 3px 0 0; color: #bdcce0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.hosted-session-card[data-phase="connected"] .hosted-status-panel { border-color: #21694f; background: #102a2a; }
+.hosted-session-card[data-phase="connected"] .hosted-status-indicator { background: #34d399; box-shadow: 0 0 0 4px rgba(52,211,153,.15); }
+.hosted-session-card[data-phase="connected"] .hosted-status-badge { color: #9af0cf; background: #164637; }
+.hosted-session-card[data-phase="error"] .hosted-status-panel,
+.hosted-session-card[data-phase="offline"] .hosted-status-panel,
+.hosted-session-card[data-phase="auth-error"] .hosted-status-panel { border-color: #8b4b54; background: #32212e; }
+.hosted-session-card[data-phase="error"] .hosted-status-indicator,
+.hosted-session-card[data-phase="offline"] .hosted-status-indicator,
+.hosted-session-card[data-phase="auth-error"] .hosted-status-indicator { background: #fb7185; box-shadow: 0 0 0 4px rgba(251,113,133,.15); }
+.hosted-session-card[data-phase="ready"] .hosted-status-indicator { background: #60a5fa; box-shadow: 0 0 0 4px rgba(96,165,250,.15); }
+.hosted-session-card[data-phase="checking"] .hosted-status-indicator,
+.hosted-session-card[data-phase="connecting"] .hosted-status-indicator,
+.hosted-session-card[data-phase="disconnecting"] .hosted-status-indicator { animation: hosted-status-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes hosted-status-pulse { to { opacity: .45; transform: scale(.82); } }
+.hosted-account-details { display: flex; flex-wrap: wrap; gap: 8px 22px; width: 100%; padding: 0 2px; color: #aebfd4; font-size: 12px; line-height: 1.5; }
+.hosted-account-details strong { color: #f8fafc; font-weight: 600; overflow-wrap: anywhere; user-select: text; }
+.hosted-form-fields { display: grid; grid-template-columns: minmax(160px, 240px) minmax(0, 1fr); align-items: center; gap: 10px 18px; width: 100%; }
+.hosted-form-fields label { color: #d5e2f2; font-size: 13px; font-weight: 600; }
+.hosted-form-fields input { width: 100%; min-width: 0; padding: 11px 13px; color: #f8fafc; background: #17243a; border: 1px solid #4a5d77; border-radius: 9px; font: inherit; }
+.hosted-form-fields input:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.hosted-form-fields p { grid-column: 2; margin: -4px 0 0; color: #9fb2ca; font-size: 12px; }
+.hosted-actions { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
+.hosted-actions button { min-height: 42px; }
+.hosted-connect { padding: 9px 20px; border: 1px solid #187deb; border-radius: 10px; background: #0877e6; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
+.hosted-connect:hover { background: #0069d4; }
+.hosted-connect:focus-visible, .hosted-actions .btn-secondary:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+.hosted-actions button:disabled { cursor: not-allowed; opacity: .55; }
+.hosted-disconnect { color: #fda4af; border-color: #8b4b54; }
+.hosted-disconnect:hover { background: #442333; }
+.hosted-action-note { margin: -4px 0 0; color: #9fb2ca; font-size: 12px; line-height: 1.5; }
+.hosted-session-card [hidden] { display: none !important; }
+@media (max-width: 640px) { .hosted-session-heading { flex-direction: column; } .hosted-form-fields { grid-template-columns: 1fr; gap: 7px; } .hosted-form-fields p { grid-column: 1; margin: 0 0 5px; } .hosted-form-fields label:not(:first-child) { margin-top: 8px; } }
+@media (prefers-reduced-motion: reduce) { .hosted-session-card .hosted-status-indicator { animation: none !important; } }
 
 .setting-info h4 {
   font-size: 14.5px;
@@ -2119,6 +2167,7 @@ input:checked + .toggle-slider:before {
 .attach-preview-icon {
   font-size: 20px;
 }
+.attach-preview-icon img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
 
 .attach-preview-info {
   display: flex;
@@ -4695,3 +4744,17 @@ input:checked + .toggle-slider:before {
 .local-account-content button:focus-visible, .local-account-modal-close:focus-visible {
   outline: 2px solid #93c5fd; outline-offset: 2px;
 }
+.chat-mention {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #63b3ff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: inherit;
+}
+.chat-mention:hover { text-decoration: underline; color: #9ad1ff; }
+.chat-mention:focus-visible { outline: 2px solid #69b7ff; outline-offset: 2px; border-radius: 2px; }
+

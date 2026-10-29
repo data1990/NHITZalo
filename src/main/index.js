@@ -1,10 +1,17 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, clipboard, dialog, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('node:crypto');
 const ZaloManager = require('./zaloManager');
 const BubbleWindowManager = require('./bubbleWindow');
 const { fetchLinkPreview, safeHttpUrl } = require('./linkPreview');
 const AccountRegistry = require('./accountRegistry');
+const { requestQuickLock } = require('./quickLock');
+const FileDownloads = require('./fileDownloads');
+const { HostedSessionBridge } = require('./hostedSessionBridge');
+const { createWebServer } = require('../web/server');
+const { autoUpdater } = require('electron-updater');
+const { createAppUpdates } = require('./appUpdates');
 
 let dashboardWindow = null;
 let bubbleManager = null;
@@ -13,7 +20,12 @@ let tray = null;
 let accountRegistry = null;
 let activeAccount = null;
 let activeAccountDir = null;
+let fileDownloads = null;
+let webHostServer = null;
+let appUpdates = null;
+const WEB_HOST_URL = 'http://127.0.0.1:3177';
 let pickerWindow = null;
+const WEB_ACCOUNT_ORIGIN = 'https://zalo.ngochoangit.net';
 
 function chooseAccount() {
   return new Promise(resolve => {
@@ -36,6 +48,7 @@ function chooseAccount() {
       resolve(account);
     };
     const failures = new Map();
+    let webLoginBusy = false;
     ipcMain.handle('account-list', event => {
       if (!fromPicker(event)) throw new Error('Cửa sổ chọn tài khoản không còn hoạt động');
       return accountRegistry.list();
@@ -70,6 +83,50 @@ function chooseAccount() {
         failures.delete(id);
         finish(account);
         return { success: true };
+      } catch (error) { return { success: false, error: error.message }; }
+    });
+    ipcMain.handle('account-set-password', (event, id, password) => {
+      if (!fromPicker(event)) return { success: false, error: 'Cửa sổ không hợp lệ' };
+      try {
+        const entry = accountRegistry.list().find(account => account.id === id);
+        if (!entry || entry.requiresPassword || entry.needsPassword) {
+          throw new Error('Tài khoản không thể đặt mật khẩu theo cách này');
+        }
+        if (!accountRegistry.changePassword(id, '', password)) throw new Error('Không thể đặt mật khẩu');
+        return { success: true };
+      } catch (error) { return { success: false, error: error.message }; }
+    });
+    ipcMain.handle('account-remove', (event, id, password) => {
+      if (!fromPicker(event)) return { success: false, error: 'Cửa sổ không hợp lệ' };
+      try {
+        accountRegistry.remove(id, password);
+        failures.delete(id);
+        return { success: true };
+      } catch (error) { return { success: false, error: error.message }; }
+    });
+    ipcMain.handle('account-web-login', async (event, username, password, accountId) => {
+      if (!fromPicker(event)) return { success: false, error: 'Cửa sổ không hợp lệ' };
+      if (webLoginBusy) return { success: false, error: 'Đang xử lý đăng nhập web' };
+      webLoginBusy = true;
+      try {
+        if (!safeStorage.isEncryptionAvailable()) throw new Error('Máy chưa hỗ trợ mã hóa khóa đăng nhập web');
+        const result = await HostedSessionBridge.login(WEB_ACCOUNT_ORIGIN, username, password, accountId);
+        if (result.accounts) return { success: true, accounts: result.accounts };
+        const { account: remote, bridge } = result;
+        const hostedSession = await bridge.download();
+        const remoteUserId = String(hostedSession?.userInfo?.userId || '');
+        const account = accountRegistry.findOrCreateHosted(bridge.origin, remote.id, remote.label, remoteUserId, safeStorage);
+        HostedSessionBridge.save(accountRegistry.dataDir(account.id), bridge.origin, bridge.token);
+        finish(account);
+        return { success: true, account: { id: remote.id, label: remote.label } };
+      } catch (error) { return { success: false, error: error.message }; }
+      finally { webLoginBusy = false; }
+    });
+    ipcMain.handle('account-web-register', async (event, username, password) => {
+      if (!fromPicker(event)) return { success: false, error: 'Cửa sổ không hợp lệ' };
+      try {
+        const result = await HostedSessionBridge.register(WEB_ACCOUNT_ORIGIN, username, password);
+        return { success: true, message: result.message };
       } catch (error) { return { success: false, error: error.message }; }
     });
   });
@@ -191,8 +248,20 @@ function createTray() {
       }
     },
     {
-      label: 'Thử nghiệm tin nhắn mẫu',
-      click: () => sendTestNotification()
+      label: 'Khóa nhanh tài khoản',
+      click: () => {
+        const result = requestQuickLock(activeAccount, () => setTimeout(() => {
+          app.relaunch(); app.exit(0);
+        }, 100));
+        if (!result.success) {
+          showAndFocusDashboard();
+          dashboardWindow?.webContents.send('account-lock-needs-password');
+        }
+      }
+    },
+    {
+      label: 'Kiểm tra cập nhật',
+      click: () => appUpdates?.check({ manual: true })
     },
     { type: 'separator' },
     {
@@ -209,51 +278,18 @@ function createTray() {
   tray.on('click', () => showAndFocusDashboard());
 }
 
-function sendTestNotification(customText) {
-  const sampleNames = ['Nguyễn Văn Nam', 'Trần Thị Mai', 'Công ty Cổ phần Tech', 'Lê Hoàng Long', 'Team Zalo Support'];
-  const sampleMessages = [
-    'Chào bạn! Dự án mới đã được duyệt rồi nhé, xem file đính kèm.',
-    'Alo bạn ơi, có online không vậy?',
-    'Hôm nay họp lúc 2h chiều nhé cả nhóm!',
-    'Đã chuyển tiền hợp đồng rồi nhé, check ZaloPay giúp mình.',
-    'OK đã nhận được thông tin, cảm ơn bạn rất nhiều!'
-  ];
-
-  const randomSender = sampleNames[Math.floor(Math.random() * sampleNames.length)];
-  const randomMsg = customText || sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
-
-  const mockMessage = {
-    id: 'test_' + Date.now(),
-    senderName: randomSender,
-    senderId: 'mock_sender_' + Math.floor(Math.random() * 1000),
-    threadId: 'mock_thread_1',
-    content: randomMsg,
-    isGroup: Math.random() > 0.5,
-    time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-    timestamp: Date.now()
-  };
-
-  // Lưu vào lịch sử lâu dài
-  if (zaloManager) {
-    zaloManager.addMessageToHistory(mockMessage);
-  }
-
-  // Gửi vào bubble
-  if (bubbleManager) {
-    bubbleManager.showNewMessage(mockMessage);
-  }
-
-  // Gửi vào dashboard
-  if (dashboardWindow && !dashboardWindow.isDestroyed()) {
-    dashboardWindow.webContents.send('zalo-new-message', mockMessage);
-  }
-}
-
 app.whenReady().then(async () => {
+  appUpdates = createAppUpdates({ app, dialog, updater: autoUpdater,
+    getWindow: () => dashboardWindow });
+  setTimeout(() => appUpdates.check(), 5000);
+  setInterval(() => appUpdates.check(), 4 * 60 * 60 * 1000);
   accountRegistry = new AccountRegistry(app.getPath('userData'));
+  const mergedProfiles = accountRegistry.consolidateSameZaloProfiles(safeStorage);
+  if (mergedProfiles) console.log(`Đã gộp ${mergedProfiles} hồ sơ dùng chung tài khoản Zalo.`);
   accountRegistry.refreshZaloNames(safeStorage);
   activeAccount = await chooseAccount();
   activeAccountDir = accountRegistry.dataDir(activeAccount.id);
+  fileDownloads = new FileDownloads(activeAccountDir, app.getPath('downloads'));
 
   // 1. Tạo Bubble Window Manager và hiển thị bong bóng nổi
   bubbleManager = new BubbleWindowManager(activeAccountDir, activeAccount);
@@ -287,6 +323,11 @@ app.whenReady().then(async () => {
       if (dashboardWindow && !dashboardWindow.isDestroyed()) {
         dashboardWindow.webContents.send('zalo-new-message', message, isOld);
       }
+      fileDownloads.onMessage(message, isOld).then(result => {
+        if (result && dashboardWindow && !dashboardWindow.isDestroyed()) {
+          dashboardWindow.webContents.send('zalo-file-download-result', { url: message.fileUrl, ...result });
+        }
+      }).catch(error => console.warn('Không thể tự tải tệp Zalo:', error.message));
     },
     (syncStatusData) => {
       // Gửi trạng thái đồng bộ chi tiết (chờ điện thoại, xác nhận, hoàn tất) đến Dashboard
@@ -320,13 +361,22 @@ app.whenReady().then(async () => {
         bubbleManager.window.webContents.send('zalo-photo-caption-updated', captionData);
       }
     },
-    activeAccountDir
+    activeAccountDir,
+    status => {
+      if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+        dashboardWindow.webContents.send('zalo-delivery-status', status);
+      }
+      if (bubbleManager?.window && !bubbleManager.window.isDestroyed()) {
+        bubbleManager.window.webContents.send('zalo-delivery-status', status);
+      }
+    }
   );
   zaloManager.requestStartupQuickSync();
+  zaloManager.hostedSessionBridge = HostedSessionBridge.load(activeAccountDir);
 
   // Tự động kiểm tra phiên đăng nhập đã lưu
   setTimeout(async () => {
-    const hasSession = zaloManager.hasSavedSession();
+    const hasSession = zaloManager.hasSavedSession() || Boolean(zaloManager.hostedSessionBridge);
     if (hasSession) {
       console.log('Phát hiện session Zalo, tự động đăng nhập...');
       await zaloManager.tryAutoLogin();
@@ -335,6 +385,74 @@ app.whenReady().then(async () => {
 
   // Cấu hình IPC Handlers
   ipcMain.handle('account-current', () => activeAccount);
+  const getHostedConnectionStatus = async () => {
+    const bridge = zaloManager?.hostedSessionBridge;
+    if (!bridge) return { phase: 'disconnected', paired: false, connected: false, origin: '' };
+    try {
+      const account = await bridge.status();
+      return { phase: 'connected', paired: true, connected: true, origin: bridge.origin,
+        accountLabel: account.label || '', hasSession: Boolean(account.has_session) };
+    } catch (error) {
+      return { phase: error.status === 401 || error.status === 403 ? 'auth-error' : 'offline',
+        paired: true, connected: false, origin: bridge.origin, error: error.message };
+    }
+  };
+  ipcMain.handle('hosted-session-status', async event => {
+    if (event.sender !== dashboardWindow?.webContents) return { phase: 'disconnected', paired: false, connected: false };
+    return getHostedConnectionStatus();
+  });
+  ipcMain.handle('hosted-session-check', async (event, origin) => {
+    if (event.sender !== dashboardWindow?.webContents) return { phase: 'error', error: 'Cửa sổ không hợp lệ' };
+    const bridge = zaloManager?.hostedSessionBridge;
+    if (bridge && (!origin || origin.trim().replace(/\/$/, '') === bridge.origin)) return getHostedConnectionStatus();
+    try {
+      const health = await HostedSessionBridge.checkOrigin(origin);
+      return { phase: 'ready', paired: false, connected: false, origin: health.origin,
+        message: 'PHP và MySQL hoạt động. Nhập mã ghép nối để kết nối.' };
+    } catch (error) { return { phase: 'error', paired: false, connected: false, origin: String(origin || ''), error: error.message }; }
+  });
+  ipcMain.handle('hosted-session-pair', async (event, origin, code) => {
+    if (event.sender !== dashboardWindow?.webContents) return { success: false, error: 'Cửa sổ không hợp lệ' };
+    try {
+      await HostedSessionBridge.checkOrigin(origin);
+      const bridge = await HostedSessionBridge.pair(origin, code);
+      const account = await bridge.status();
+      const local = zaloManager.loadSession();
+      const remote = await bridge.download();
+      if (local && remote) {
+        const localUid = String(local.userInfo?.userId || '');
+        const remoteUid = String(remote.userInfo?.userId || '');
+        if (localUid && remoteUid && localUid !== remoteUid) {
+          await bridge.revoke();
+          throw new Error('Tài khoản Zalo trên hosting khác với tài khoản đang mở trong Electron');
+        }
+      }
+      if (!remote && local?.imei && local?.cookie) await bridge.upload(local);
+      HostedSessionBridge.save(activeAccountDir, bridge.origin, bridge.token);
+      const previousBridge = zaloManager.hostedSessionBridge;
+      zaloManager.hostedSessionBridge = bridge;
+      if (previousBridge && previousBridge.token !== bridge.token) previousBridge.revoke()
+        .catch(error => console.warn('Không thể thu hồi mã thiết bị cũ:', error.message));
+      if (remote?.imei && remote?.cookie) {
+        if (!zaloManager.api) zaloManager.tryAutoLogin().catch(error => console.warn('Không thể đăng nhập phiên hosting:', error.message));
+      }
+      return { success: true, origin: bridge.origin, accountLabel: account.label || '',
+        hasSession: Boolean(remote?.imei && remote?.cookie) || Boolean(local?.imei && local?.cookie) };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+  ipcMain.handle('hosted-session-unpair', async event => {
+    if (event.sender !== dashboardWindow?.webContents) return { success: false };
+    try { await zaloManager.hostedSessionBridge?.revoke(); }
+    catch (error) {
+      if (error.status !== 401 && error.status !== 403) {
+        return { success: false, error: `Không thu hồi được quyền thiết bị: ${error.message}` };
+      }
+    }
+    try { fs.unlinkSync(path.join(activeAccountDir, 'hosted_session_bridge.json')); }
+    catch (error) { if (error.code !== 'ENOENT') return { success: false, error: `Không xóa được ghép nối trên máy: ${error.message}` }; }
+    zaloManager.hostedSessionBridge = null;
+    return { success: true };
+  });
   ipcMain.handle('account-change-password', (event, currentPassword, newPassword) => {
     if (event.sender !== dashboardWindow?.webContents) return { success: false, error: 'Cửa sổ không hợp lệ' };
     try {
@@ -347,6 +465,46 @@ app.whenReady().then(async () => {
   ipcMain.handle('account-switch', event => {
     if (event.sender !== dashboardWindow?.webContents) return { success: false };
     setTimeout(() => { app.relaunch(); app.exit(0); }, 100);
+    return { success: true };
+  });
+  ipcMain.handle('account-lock', event => {
+    if (event.sender !== dashboardWindow?.webContents) return { success: false, error: 'Cửa sổ không hợp lệ' };
+    return requestQuickLock(activeAccount, () => setTimeout(() => {
+      app.relaunch(); app.exit(0);
+    }, 100));
+  });
+
+  ipcMain.handle('web-host-status', event => {
+    if (event.sender !== dashboardWindow?.webContents) return { running: false };
+    return { running: Boolean(webHostServer?.listening), url: WEB_HOST_URL };
+  });
+  ipcMain.handle('web-host-start', async (event, password) => {
+    if (event.sender !== dashboardWindow?.webContents) return { success: false, error: 'Cửa sổ không hợp lệ' };
+    if (webHostServer?.listening) return { success: true, url: WEB_HOST_URL };
+    try {
+      const server = createWebServer({ dataDir: path.join(app.getPath('userData'), 'web-host'),
+        password, publicOrigin: WEB_HOST_URL });
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(3177, '127.0.0.1', () => { server.off('error', reject); resolve(); });
+      });
+      webHostServer = server;
+      server.zaloSessions.resumeAll().catch(error => console.warn('Lỗi khôi phục phiên web:', error.message));
+      return { success: true, url: WEB_HOST_URL };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+  ipcMain.handle('web-host-stop', async event => {
+    if (event.sender !== dashboardWindow?.webContents) return { success: false };
+    if (webHostServer?.listening) {
+      const server = webHostServer;
+      webHostServer = null;
+      await new Promise(resolve => { server.close(resolve); server.closeAllConnections?.(); });
+    }
+    return { success: true };
+  });
+  ipcMain.handle('web-host-open', async event => {
+    if (event.sender !== dashboardWindow?.webContents || !webHostServer?.listening) return { success: false };
+    await shell.openExternal(WEB_HOST_URL);
     return { success: true };
   });
 
@@ -488,7 +646,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('zalo-check-session', () => {
     return {
-      hasSession: zaloManager.hasSavedSession(),
+      hasSession: zaloManager.hasSavedSession() || Boolean(zaloManager.hostedSessionBridge),
       currentUser: zaloManager.currentUser
     };
   });
@@ -589,6 +747,22 @@ app.whenReady().then(async () => {
     return zaloManager ? zaloManager.getFriendsList() : [];
   });
 
+  ipcMain.handle('open-contact-chat', async (event, contact) => {
+    if (event.sender !== dashboardWindow?.webContents &&
+        event.sender !== bubbleManager?.window?.webContents) return { success: false };
+    const uid = String(contact?.uid || '');
+    if (!/^\d{7,25}$/.test(uid)) return { success: false, error: 'ID người dùng không hợp lệ' };
+    const name = String(contact?.name || '').slice(0, 100);
+    const needsLoad = !dashboardWindow || dashboardWindow.isDestroyed();
+    showAndFocusDashboard();
+    if (needsLoad) {
+      dashboardWindow.webContents.once('did-finish-load', () => {
+        dashboardWindow?.webContents.send('open-contact-chat', { uid, name });
+      });
+    } else dashboardWindow.webContents.send('open-contact-chat', { uid, name });
+    return { success: true };
+  });
+
   ipcMain.handle('zalo-fetch-friends', async () => {
     return zaloManager ? await zaloManager.fetchFriendsList() : [];
   });
@@ -641,25 +815,20 @@ app.whenReady().then(async () => {
 
   // Lưu ảnh chụp màn hình từ Clipboard vào thư mục tạm thời để gửi đi
   ipcMain.handle('save-clipboard-image', async (event, base64Data) => {
-    try {
-      const tempDir = path.join(activeAccountDir, 'temp_attachments');
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
-      }
-      const fileName = `clipboard_img_${Date.now()}.png`;
-      const filePath = path.join(tempDir, fileName);
-      const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
-      const buffer = Buffer.from(cleanBase64, 'base64');
-      fs.writeFileSync(filePath, buffer);
-      return filePath;
-    } catch (err) {
-      console.error('Lỗi lưu ảnh clipboard:', err);
-      return null;
+    if (event.sender !== dashboardWindow?.webContents &&
+        event.sender !== bubbleManager?.window?.webContents) throw new Error('Cửa sổ không hợp lệ');
+    if (base64Data && (!/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(base64Data) || base64Data.length > 35_000_000)) {
+      throw new Error('Dữ liệu ảnh clipboard không hợp lệ hoặc quá lớn');
     }
-  });
-
-  ipcMain.on('send-test-message', (event, customContent) => {
-    sendTestNotification(customContent);
+    const image = base64Data ? nativeImage.createFromDataURL(base64Data) : clipboard.readImage();
+    if (image.isEmpty()) throw new Error('Clipboard không chứa ảnh hợp lệ');
+    const buffer = image.toPNG();
+    if (buffer.length > 25_000_000) throw new Error('Ảnh clipboard vượt quá 25 MB');
+    const tempDir = path.join(activeAccountDir, 'temp_attachments');
+    fs.mkdirSync(tempDir, { recursive: true });
+    const filePath = path.join(tempDir, `clipboard_img_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.png`);
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
   });
 
   ipcMain.on('bubble-reset-position', () => {
@@ -673,55 +842,39 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle('zalo-file-download-settings', () => fileDownloads.getSettings());
+  ipcMain.handle('zalo-file-download-set-settings', (event, changes) => fileDownloads.setSettings(changes));
+  ipcMain.handle('zalo-file-download-choose-directory', async () => {
+    const result = await dialog.showOpenDialog(dashboardWindow, {
+      title: 'Chọn thư mục lưu tệp Zalo', properties: ['openDirectory'],
+      defaultPath: fileDownloads.getSettings().directory
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return fileDownloads.setSettings({ directory: result.filePaths[0] });
+  });
+  ipcMain.handle('zalo-file-lookup', (event, items) => fileDownloads.lookup(items));
+
   // Tải tệp tin về máy tính
-  ipcMain.handle('zalo-download-file', async (event, { fileUrl, fileName, promptSaveAs }) => {
+  ipcMain.handle('zalo-download-file', async (event, { fileUrl, fileName, promptSaveAs, fileSize }) => {
     try {
       if (!fileUrl) throw new Error('Không có đường dẫn tệp tin');
-      
-      let targetPath = '';
-      const safeName = (fileName || 'tep_tin').replace(/[\\/:*?"<>|]/g, '_');
-      
+      let targetPath;
       if (promptSaveAs) {
+        const safeName = fileDownloads.safeName(fileName, fileUrl);
         const ext = path.extname(safeName).slice(1);
         const result = await dialog.showSaveDialog(dashboardWindow || null, {
           title: 'Lưu tệp tin về máy tính',
-          defaultPath: path.join(app.getPath('downloads'), safeName),
+          defaultPath: path.join(fileDownloads.getSettings().directory, safeName),
           filters: ext ? [{ name: ext.toUpperCase() + ' File', extensions: [ext] }, { name: 'Tất cả tệp', extensions: ['*'] }] : [{ name: 'Tất cả tệp', extensions: ['*'] }]
         });
-        if (result.canceled || !result.filePath) {
-          return { success: false, canceled: true };
-        }
+        if (result.canceled || !result.filePath) return { success: false, canceled: true };
         targetPath = result.filePath;
-      } else {
-        const downloadDir = app.getPath('downloads');
-        targetPath = path.join(downloadDir, safeName);
-        
-        // Tránh ghi đè nếu trùng tên: thêm (1), (2)...
-        let counter = 1;
-        const nameWithoutExt = path.parse(safeName).name;
-        const ext = path.parse(safeName).ext;
-        while (fs.existsSync(targetPath)) {
-          targetPath = path.join(downloadDir, `${nameWithoutExt} (${counter})${ext}`);
-          counter++;
-        }
       }
-
-      console.log(`Đang tải tệp tin từ: ${fileUrl} -> ${targetPath}`);
-      const response = await fetch(fileUrl);
-      if (!response.ok) {
-        throw new Error(`Tải tệp thất bại: HTTP ${response.status} ${response.statusText}`);
+      const result = await fileDownloads.download(fileUrl, fileName, { targetPath, fileSize });
+      if (result.success && dashboardWindow && !dashboardWindow.isDestroyed()) {
+        dashboardWindow.webContents.send('zalo-file-download-result', { url: fileUrl, ...result });
       }
-      
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      fs.writeFileSync(targetPath, buffer);
-
-      console.log(`Đã tải thành công tệp tin vào: ${targetPath}`);
-      return {
-        success: true,
-        filePath: targetPath,
-        fileName: path.basename(targetPath)
-      };
+      return result;
     } catch (err) {
       console.error('Lỗi tải tệp tin:', err);
       return { success: false, error: err.message };

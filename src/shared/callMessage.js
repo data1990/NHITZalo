@@ -1,6 +1,12 @@
 (function (root) {
   function describeCallMessage(message) {
     const raw = String(message?.content || '').trim();
+    if (message?.msgType === 'chat.recommended' && /^\d{1,2}:\d{1,2}$/.test(raw) &&
+        !message?.voiceUrl && !message?.m4aUrl) {
+      const duration = raw.replace(/:(\d)$/, ':0$1');
+      const kind = /video|hình/i.test(String(message?.callType || '')) ? 'video' : 'thoại';
+      return `Cuộc gọi ${kind} ${message?.isSelf ? 'đi' : 'đến'} · ${duration}`;
+    }
     const callText = raw.match(/^sendBubbleMessage\s*[-–:]\s*(Cuộc gọi.*)$/i)?.[1] || raw;
     const isCall = /^Cuộc gọi(?:\s|$)/i.test(callText) &&
       (/^sendBubbleMessage\s*[-–:]/i.test(raw) || /call/i.test(String(message?.msgType || '')));

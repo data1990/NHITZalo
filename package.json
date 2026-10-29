@@ -1,17 +1,26 @@
 {
   "name": "nhitzalo",
-  "version": "1.1.7",
+  "version": "1.1.31",
   "description": "",
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron .",
+    "web:start": "node src/web/server.js",
+    "build:web:aapanel": "node scripts/build-web-aapanel.js",
+    "build:web:portable": "node scripts/build-web-aapanel.js --portable",
+    "build:php:ui": "npm --prefix web-php/frontend run build",
+    "build:php:aapanel": "npm run build:php:ui && node scripts/build-php-aapanel.js",
     "postinstall": "node scripts/patch-zalo.js",
     "test": "node --test test/*.test.js",
-    "build:win": "electron-builder --win nsis --x64"
+    "build:win": "electron-builder --win nsis --x64 --publish never"
   },
   "build": {
     "appId": "vn.ngochoangit.nhitzalo",
     "productName": "NHIT Zalo Bubble Notifier",
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/data1990/NHITZalo/releases/download/NHITZalo/"
+    },
     "directories": {
       "output": "dist"
     },
@@ -38,6 +47,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "qrcode": "^1.5.4",
     "tough-cookie": "^5.1.2",
     "zalo-api-final": "^2.1.1"
